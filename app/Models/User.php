@@ -1,0 +1,62 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
+
+class User extends Authenticatable
+{
+    use HasApiTokens, HasFactory, Notifiable;
+
+    protected $fillable = [
+        'name',
+        'email',
+        'phone',
+        'password',
+        'type',
+        'avatar',
+        'avatar_url',
+        'is_active',
+        'provider',
+        'provider_id',
+        'nickname',
+        'fcm_token',
+        'fcm_token_updated_at',
+    ];
+
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+        'password' => 'hashed',
+        'is_active' => 'boolean',
+    ];
+
+    public function worker(): HasOne
+    {
+        return $this->hasOne(Worker::class);
+    }
+
+    public function jobsAsEmployer(): HasMany
+    {
+        return $this->hasMany(Job::class, 'employer_id');
+    }
+
+    public function isWorker(): bool
+    {
+        return $this->type === 'worker';
+    }
+
+    public function isEmployer(): bool
+    {
+        return $this->type === 'employer';
+    }
+}
