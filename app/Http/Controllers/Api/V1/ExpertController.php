@@ -114,15 +114,15 @@ class ExpertController extends Controller
             $viewsLastHour = ProfileView::where('worker_id', $expert->id)
                 ->where('created_at', '>=', now()->subHour())
                 ->count();
-            try {
-                broadcast(new ProfileViewed(
-                    workerUserId: $expert->user_id,
-                    viewerCity: $city,
-                    viewCount: $viewsLastHour,
-                ));
-            } catch (\Throwable $e) {
-                // Silent fail — don't break the response
-            }
+            // try {
+            //     broadcast(new ProfileViewed(
+            //         workerUserId: $expert->user_id,
+            //         viewerCity: $city,
+            //         viewCount: $viewsLastHour,
+            //     ));
+            // } catch (\Throwable $e) {
+            //     // Silent fail — don't break the response
+            // }
         }
 
         return response()->json([

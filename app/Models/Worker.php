@@ -38,7 +38,7 @@ class Worker extends Model
         'last_seen_at' => 'datetime',
     ];
 
-    protected $appends = ['latitude', 'longitude'];
+    protected $appends = [];
 
     protected $hidden = ['location'];
 

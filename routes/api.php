@@ -39,6 +39,11 @@ Route::get('/auth/facebook', [SocialAuthController::class, 'redirectToFacebook']
 Route::get('/auth/facebook/callback', [SocialAuthController::class, 'handleFacebookCallback']);
 Route::post('/auth/{provider}/mobile', [SocialAuthController::class, 'mobileLogin']);
 
+// Broadcasting auth route for Pusher
+Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
+    return \Illuminate\Support\Facades\Broadcast::auth($request);
+})->middleware('auth:sanctum');
+
 // Public endpoints (no auth required) — legacy
 Route::get('/map/nearby-workers', [MapController::class, 'nearbyWorkers']);
 Route::get('/map/clusters', [MapController::class, 'clusters']);

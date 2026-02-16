@@ -49,8 +49,7 @@ class ServiceRequestController extends Controller
             'delivery_lng' => $validated['delivery_lng'] ?? null,
         ]);
 
-        // TEMPORALMENTE DESHABILITADO - Reverb timeout
-        // broadcast(new ServiceRequestCreated($sr));
+        broadcast(new ServiceRequestCreated($sr));
 
         return response()->json([
             'status' => 'success',

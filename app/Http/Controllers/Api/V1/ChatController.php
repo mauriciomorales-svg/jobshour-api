@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Message;
 use App\Models\ServiceRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class ChatController extends Controller
 {
@@ -54,8 +55,22 @@ class ChatController extends Controller
 
         $message->load('sender:id,name,avatar');
 
-        // TEMPORALMENTE DESHABILITADO - Reverb timeout
-        // broadcast(new NewMessage($message))->toOthers();
+        Log::info('Broadcasting NewMessage', [
+            'service_request_id' => $serviceRequest->id,
+            'message_id' => $message->id,
+            'sender_id' => $message->sender_id,
+        ]);
+
+        try {
+            broadcast(new NewMessage($message))->toOthers();
+        } catch (\Throwable $e) {
+            Log::error('Broadcast NewMessage failed', [
+                'service_request_id' => $serviceRequest->id,
+                'message_id' => $message->id,
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+            ]);
+        }
 
         return response()->json([
             'status' => 'success',
