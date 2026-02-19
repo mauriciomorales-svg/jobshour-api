@@ -5,9 +5,12 @@ namespace App\Listeners;
 use App\Events\ServiceRequestCreated;
 use App\Events\ServiceRequestUpdated;
 use App\Events\NewMessage;
+use App\Mail\DemandTakenMail;
+use App\Mail\DemandCompletedMail;
 use App\Services\FCMService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class SendPushNotifications
 {
@@ -107,6 +110,19 @@ class SendPushNotifications
         }
 
         $this->fcm->sendToUser($client, $title, $body, $data);
+
+        // Email transaccional
+        if ($client->email) {
+            try {
+                match ($sr->status) {
+                    'taken', 'accepted' => Mail::to($client->email)->queue(new DemandTakenMail($sr)),
+                    'completed' => Mail::to($client->email)->queue(new DemandCompletedMail($sr)),
+                    default => null,
+                };
+            } catch (\Exception $e) {
+                Log::warning("[Email] Failed: " . $e->getMessage());
+            }
+        }
     }
 
     /**

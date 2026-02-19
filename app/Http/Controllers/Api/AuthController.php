@@ -43,6 +43,13 @@ class AuthController extends Controller
 
         $token = $user->createToken('auth-token')->plainTextToken;
 
+        // Email de bienvenida
+        try {
+            \Illuminate\Support\Facades\Mail::to($user->email)->queue(new \App\Mail\WelcomeMail($user));
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning("[Email] Welcome mail failed: " . $e->getMessage());
+        }
+
         return response()->json([
             'user' => $user->load('worker'),
             'token' => $token,

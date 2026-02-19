@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DiagnosticController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\ReviewController;
+use App\Http\Controllers\Api\V1\AdminController;
 
 use App\Http\Controllers\Api\WorkerProfileController;
 use App\Http\Controllers\Api\FriendsController;
@@ -207,6 +208,17 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::post('/travel-requests/{requestId}/accept', [TravelRequestController::class, 'accept']);
     Route::post('/travel-requests/{requestId}/reject', [TravelRequestController::class, 'reject']);
     Route::get('/travel-requests/{requestId}/track', [TravelRequestController::class, 'track']);
+
+    // Admin Panel
+    Route::prefix('admin')->group(function () {
+        Route::get('/stats', [AdminController::class, 'stats']);
+        Route::get('/users', [AdminController::class, 'users']);
+        Route::get('/users/{id}', [AdminController::class, 'userDetail']);
+        Route::post('/users/{id}/toggle', [AdminController::class, 'toggleUser']);
+        Route::get('/demands', [AdminController::class, 'demands']);
+        Route::post('/demands/{id}/cancel', [AdminController::class, 'cancelDemand']);
+        Route::get('/categories', [AdminController::class, 'categories']);
+    });
 });
 
 Route::middleware('auth:sanctum')->group(function () {
