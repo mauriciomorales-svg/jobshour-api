@@ -19,6 +19,9 @@ return [
         'client_secret' => env('FACEBOOK_CLIENT_SECRET'),
         'redirect' => env('FACEBOOK_REDIRECT_URI'),
     ],
+    'fcm' => [
+        'server_key' => env('FCM_SERVER_KEY'),
+    ],
     'flow' => [
         // ⚠️ CONFIGURACIÓN PENDIENTE: Obtener claves de Flow.cl
         // Ver: PENDIENTE_CONFIGURACION_FLOW.md

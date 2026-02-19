@@ -2,8 +2,13 @@
 
 namespace App\Providers;
 
+use App\Events\ServiceRequestCreated;
+use App\Events\ServiceRequestUpdated;
+use App\Events\NewMessage;
+use App\Listeners\SendPushNotifications;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -45,5 +50,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('demand', function (Request $request) {
             return Limit::perMinute(5)->by($request->user()?->id ?? $request->ip());
         });
+
+        // FCM Push Notifications
+        Event::listen(ServiceRequestCreated::class, [SendPushNotifications::class, 'handleDemandCreated']);
+        Event::listen(ServiceRequestUpdated::class, [SendPushNotifications::class, 'handleDemandUpdated']);
+        Event::listen(NewMessage::class, [SendPushNotifications::class, 'handleNewMessage']);
     }
 }
