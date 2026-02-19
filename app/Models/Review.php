@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Review extends Model
 {
-    protected $fillable = ['worker_id', 'reviewer_id', 'service_request_id', 'stars', 'comment'];
+    protected $fillable = ['worker_id', 'reviewer_id', 'service_request_id', 'stars', 'comment', 'response', 'responded_at'];
 
     protected $casts = [
         'stars' => 'integer',
+        'responded_at' => 'datetime',
     ];
 
     public function worker(): BelongsTo

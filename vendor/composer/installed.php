@@ -3,7 +3,7 @@
         'name' => 'jobshour/api',
         'pretty_version' => 'dev-master',
         'version' => 'dev-master',
-        'reference' => 'c18bc0476808708e9fe67cbcb1a48fa07598d6b9',
+        'reference' => 'ac5f9184bde608237725174492811c80949a0633',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -427,7 +427,7 @@
         'jobshour/api' => array(
             'pretty_version' => 'dev-master',
             'version' => 'dev-master',
-            'reference' => 'c18bc0476808708e9fe67cbcb1a48fa07598d6b9',
+            'reference' => 'ac5f9184bde608237725174492811c80949a0633',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
@@ -510,6 +510,15 @@
             'install_path' => __DIR__ . '/../laravel/socialite',
             'aliases' => array(),
             'dev_requirement' => false,
+        ),
+        'laravel/telescope' => array(
+            'pretty_version' => 'v5.17.0',
+            'version' => '5.17.0.0',
+            'reference' => '1000b2d994a3cc1ee893f97f9cc2f554352ebc76',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../laravel/telescope',
+            'aliases' => array(),
+            'dev_requirement' => true,
         ),
         'league/commonmark' => array(
             'pretty_version' => '2.8.0',

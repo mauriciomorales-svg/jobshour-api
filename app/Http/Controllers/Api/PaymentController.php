@@ -97,12 +97,55 @@ class PaymentController extends Controller
 
     public function history(Request $request)
     {
-        $payments = Payment::where('employer_id', auth()->id())
-            ->orWhere('worker_id', auth()->id())
-            ->with(['workSession:id,started_at,ended_at', 'employer:id,name', 'worker:id,name'])
-            ->latest()
-            ->paginate($request->input('per_page', 20));
+        $userId = auth()->id();
+        
+        // Obtener pagos donde el usuario es cliente o worker
+        $payments = DB::table('payments')
+            ->where(function($q) use ($userId) {
+                $q->where('client_id', $userId)
+                  ->orWhere('worker_id', $userId);
+            })
+            ->leftJoin('service_requests', 'payments.service_request_id', '=', 'service_requests.id')
+            ->leftJoin('workers', 'service_requests.worker_id', '=', 'workers.id')
+            ->leftJoin('users as worker_user', 'workers.user_id', '=', 'worker_user.id')
+            ->select(
+                'payments.id',
+                'payments.service_request_id',
+                'payments.amount',
+                'payments.payment_method',
+                'payments.status',
+                'payments.completed_at',
+                'payments.created_at',
+                'service_requests.description as service_description',
+                'worker_user.name as worker_name',
+                'worker_user.avatar as worker_avatar'
+            )
+            ->orderByDesc('payments.created_at')
+            ->limit(50)
+            ->get()
+            ->map(function($payment) {
+                return [
+                    'id' => $payment->id,
+                    'service_request_id' => $payment->service_request_id,
+                    'amount' => (float) $payment->amount,
+                    'payment_method' => $payment->payment_method,
+                    'status' => $payment->status,
+                    'completed_at' => $payment->completed_at,
+                    'created_at' => $payment->created_at,
+                    'service_request' => [
+                        'id' => $payment->service_request_id,
+                        'description' => $payment->service_description,
+                        'worker' => $payment->worker_name ? [
+                            'name' => $payment->worker_name,
+                            'avatar' => $payment->worker_avatar,
+                        ] : null,
+                    ],
+                ];
+            });
 
-        return response()->json($payments);
+        return response()->json([
+            'status' => 'success',
+            'data' => $payments,
+        ]);
     }
 }

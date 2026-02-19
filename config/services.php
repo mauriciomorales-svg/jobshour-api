@@ -19,4 +19,11 @@ return [
         'client_secret' => env('FACEBOOK_CLIENT_SECRET'),
         'redirect' => env('FACEBOOK_REDIRECT_URI'),
     ],
+    'flow' => [
+        // ⚠️ CONFIGURACIÓN PENDIENTE: Obtener claves de Flow.cl
+        // Ver: PENDIENTE_CONFIGURACION_FLOW.md
+        'api_key' => env('FLOW_API_KEY', ''),
+        'secret_key' => env('FLOW_SECRET_KEY', ''),
+        'sandbox' => env('FLOW_SANDBOX', true), // Por defecto en sandbox hasta configurar
+    ],
 ];

@@ -14,7 +14,24 @@ class FirebaseService
     public function __construct()
     {
         $this->projectId = config('firebase.project_id', 'jobshours');
-        $this->credentialsFile = config('firebase.credentials.file');
+        $credentialsFile = config('firebase.credentials.file');
+
+        if (is_string($credentialsFile) && $credentialsFile !== '') {
+            $isAbsoluteUnix = str_starts_with($credentialsFile, '/');
+            $isAbsoluteWindows = preg_match('/^[A-Za-z]:\\\\/', $credentialsFile) === 1;
+
+            if (!$isAbsoluteUnix && !$isAbsoluteWindows) {
+                $credentialsFile = base_path($credentialsFile);
+            }
+        }
+
+        $this->credentialsFile = $credentialsFile;
+
+        Log::info('[FCM] FirebaseService initialized', [
+            'project_id' => $this->projectId,
+            'credentials_file' => $this->credentialsFile,
+            'credentials_exists' => is_string($this->credentialsFile) ? file_exists($this->credentialsFile) : false,
+        ]);
     }
 
     private function getAccessToken()
@@ -56,7 +73,23 @@ class FirebaseService
             'assertion' => $jwt,
         ]);
 
-        return $response->successful() ? $response->json('access_token') : null;
+        if (!$response->successful()) {
+            Log::error('[FCM] OAuth token request failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+            return null;
+        }
+
+        $accessToken = $response->json('access_token');
+        if (!$accessToken) {
+            Log::error('[FCM] OAuth token missing in response', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+        }
+
+        return $accessToken;
     }
 
     public function sendToDevice(string $deviceToken, string $title, string $body, array $data = [])
@@ -75,6 +108,15 @@ class FirebaseService
         ];
 
         $response = Http::withToken($token)->post($url, $message);
+
+        if (!$response->successful()) {
+            Log::error('[FCM] FCM send failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'project_id' => $this->projectId,
+            ]);
+        }
+
         return $response->successful();
     }
 

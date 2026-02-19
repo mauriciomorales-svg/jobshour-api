@@ -82,6 +82,8 @@ return array(
     'League\\Flysystem\\' => array($vendorDir . '/league/flysystem/src'),
     'League\\Config\\' => array($vendorDir . '/league/config/src'),
     'League\\CommonMark\\' => array($vendorDir . '/league/commonmark/src'),
+    'Laravel\\Telescope\\Database\\Factories\\' => array($vendorDir . '/laravel/telescope/database/factories'),
+    'Laravel\\Telescope\\' => array($vendorDir . '/laravel/telescope/src'),
     'Laravel\\Socialite\\' => array($vendorDir . '/laravel/socialite/src'),
     'Laravel\\SerializableClosure\\' => array($vendorDir . '/laravel/serializable-closure/src'),
     'Laravel\\Sanctum\\' => array($vendorDir . '/laravel/sanctum/src'),

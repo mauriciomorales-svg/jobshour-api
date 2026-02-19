@@ -56,10 +56,8 @@ class WorkerProfileController extends Controller
                     ->where('status', 'completed')
                     ->count();
                 
-                $avgRating = ServiceRequest::where('worker_id', $w->id)
-                    ->where('status', 'completed')
-                    ->whereNotNull('worker_rating')
-                    ->avg('worker_rating') ?? 0;
+                $avgRating = \App\Models\Review::where('worker_id', $w->id)
+                    ->avg('stars') ?? 0;
 
                 $score = ($avgRating * 10) + ($completedJobs * 0.5);
                 
@@ -250,17 +248,13 @@ class WorkerProfileController extends Controller
             ->where('status', 'completed')
             ->sum('final_price') ?? 0;
 
-        $avgRating = ServiceRequest::where('worker_id', $worker->id)
-            ->where('status', 'completed')
-            ->whereNotNull('worker_rating')
-            ->avg('worker_rating') ?? 0;
+        $avgRating = \App\Models\Review::where('worker_id', $worker->id)
+            ->avg('stars') ?? 0;
 
         // CRÍTICO #6: Rating segregado por categoría principal
-        $categoryRating = ServiceRequest::where('worker_id', $worker->id)
+        $categoryRating = \App\Models\Review::where('worker_id', $worker->id)
             ->where('category_id', $worker->category_id)
-            ->where('status', 'completed')
-            ->whereNotNull('worker_rating')
-            ->avg('worker_rating') ?? 0;
+            ->avg('stars') ?? 0;
 
         $categoryJobsCount = ServiceRequest::where('worker_id', $worker->id)
             ->where('category_id', $worker->category_id)
@@ -454,10 +448,8 @@ class WorkerProfileController extends Controller
                 ->where('status', 'completed')
                 ->count();
 
-            $avgRating = ServiceRequest::where('worker_id', $worker->id)
-                ->where('status', 'completed')
-                ->whereNotNull('worker_rating')
-                ->avg('worker_rating') ?? 0;
+            $avgRating = \App\Models\Review::where('worker_id', $worker->id)
+                ->avg('stars') ?? 0;
 
             $validatedFriends = Friendship::where(function($q) use ($worker) {
                 $q->where('requester_id', $worker->user_id)->orWhere('addressee_id', $worker->user_id);

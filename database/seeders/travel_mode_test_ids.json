@@ -1,0 +1,24 @@
+{
+    "marco_user_id": 20,
+    "marco_worker_id": 12,
+    "maria_user_id": 21,
+    "maria_worker_id": 13,
+    "pedro_user_id": 22,
+    "pedro_worker_id": 14,
+    "renaico": {
+        "lat": -37.67,
+        "lng": -72.57
+    },
+    "angol": {
+        "lat": -37.8,
+        "lng": -72.71
+    },
+    "maria_location": {
+        "lat": -37.73,
+        "lng": -72.62499999999999
+    },
+    "pedro_location": {
+        "lat": -37.745,
+        "lng": -72.70499999999998
+    }
+}

@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Worker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class FriendsController extends Controller
@@ -83,25 +84,93 @@ class FriendsController extends Controller
     }
 
     /**
-     * Buscar por nickname
+     * Buscar trabajadores con geolocalización y filtros
      */
     public function searchByNickname(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'nickname' => 'required|string|min:3',
+            'q' => 'nullable|string|min:2',
+            'nickname' => 'nullable|string|min:2', // backward compatibility
+            'lat' => 'nullable|numeric|between:-90,90',
+            'lng' => 'nullable|numeric|between:-180,180',
+            'max_radius_km' => 'nullable|numeric|min:1|max:100',
+            'active_only' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $workers = Worker::where('nickname', 'ILIKE', '%' . $request->nickname . '%')
-            ->where('is_visible', true)
-            ->with('user:id,name,email')
-            ->limit(10)
-            ->get();
+        $query = $request->q ?? $request->nickname;
+        $lat = $request->lat;
+        $lng = $request->lng;
+        $maxRadius = $request->max_radius_km ?? 10; // Default 10km
+        $activeOnly = $request->active_only ?? false;
 
-        return response()->json(['workers' => $workers]);
+        $workersQuery = Worker::where('is_visible', true)
+            ->with(['user:id,name,email,avatar', 'category:id,name,display_name,icon,color', 'categories:id,name,display_name,icon,color']);
+
+        // Filtro de búsqueda por texto
+        if ($query) {
+            $workersQuery->where(function($q) use ($query) {
+                $q->where('nickname', 'ILIKE', '%' . $query . '%')
+                  ->orWhereHas('user', function($uq) use ($query) {
+                      $uq->where('name', 'ILIKE', '%' . $query . '%');
+                  })
+                  ->orWhereHas('category', function($cq) use ($query) {
+                      $cq->where('name', 'ILIKE', '%' . $query . '%')
+                         ->orWhere('display_name', 'ILIKE', '%' . $query . '%');
+                  });
+            });
+        }
+
+        // Filtro de activos
+        if ($activeOnly) {
+            $workersQuery->where('availability_status', 'active');
+        }
+
+        // Si hay geolocalización, calcular distancia
+        if ($lat && $lng) {
+            $workersQuery->selectRaw("
+                workers.*,
+                ST_Distance(
+                    location::geography,
+                    ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography
+                ) / 1000 as distance_km
+            ", [$lng, $lat])
+            ->whereRaw("
+                ST_DWithin(
+                    location::geography,
+                    ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+                    ? * 1000
+                )
+            ", [$lng, $lat, $maxRadius])
+            ->orderBy('distance_km', 'asc');
+        }
+
+        $workers = $workersQuery->limit(20)->get();
+
+        // Formatear respuesta
+        $formattedWorkers = $workers->map(function($worker) {
+            return [
+                'id' => $worker->id,
+                'user_id' => $worker->user_id,
+                'name' => $worker->user->name,
+                'nickname' => $worker->nickname,
+                'avatar_url' => $worker->user->avatar ?? $worker->avatar_url,
+                'category' => $worker->category ? [
+                    'id' => $worker->category->id,
+                    'name' => $worker->category->display_name ?? $worker->category->name,
+                    'icon' => $worker->category->icon,
+                    'color' => $worker->category->color,
+                ] : null,
+                'skills' => $worker->categories->pluck('display_name')->toArray(),
+                'is_active' => $worker->availability_status === 'active',
+                'distance_km' => isset($worker->distance_km) ? round($worker->distance_km, 1) : null,
+            ];
+        });
+
+        return response()->json(['workers' => $formattedWorkers]);
     }
 
     /**
@@ -233,30 +302,50 @@ class FriendsController extends Controller
     }
 
     /**
-     * Listar amigos del usuario
+     * Listar amigos del usuario con distancia y estado
      */
     public function listFriends(Request $request)
     {
         $user = $request->user();
+        $lat = $request->query('lat');
+        $lng = $request->query('lng');
         
         $friendships = Friendship::where(function($q) use ($user) {
             $q->where('requester_id', $user->id)
               ->orWhere('addressee_id', $user->id);
         })
         ->where('status', 'accepted')
-        ->with(['requester.worker', 'addressee.worker'])
+        ->with(['requester.worker.categories', 'addressee.worker.categories'])
         ->get();
 
-        $friends = $friendships->map(function($f) use ($user) {
+        $friends = $friendships->map(function($f) use ($user, $lat, $lng) {
             $friend = $f->requester_id === $user->id ? $f->addressee : $f->requester;
+            $worker = $friend->worker;
+            
+            $distanceKm = null;
+            if ($worker && $worker->location && $lat && $lng) {
+                // Calcular distancia usando PostGIS
+                $distance = DB::selectOne("
+                    SELECT ST_Distance(
+                        ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+                        location::geography
+                    ) / 1000 as distance_km
+                    FROM workers WHERE id = ?
+                ", [$lng, $lat, $worker->id]);
+                
+                $distanceKm = $distance ? round($distance->distance_km, 1) : null;
+            }
+            
             return [
                 'friendship_id' => $f->id,
                 'user_id' => $friend->id,
                 'name' => $friend->name,
-                'nickname' => $friend->worker->nickname ?? null,
-                'avatar_url' => $friend->worker->avatar_url ?? null,
-                'skills' => $friend->worker->skills ?? [],
+                'nickname' => $worker->nickname ?? null,
+                'avatar_url' => $friend->avatar ?? $worker->avatar_url ?? null,
+                'skills' => $worker && $worker->categories ? $worker->categories->pluck('display_name')->toArray() : [],
                 'accepted_at' => $f->accepted_at,
+                'is_active' => $worker && $worker->availability_status === 'active',
+                'distance_km' => $distanceKm,
             ];
         });
 

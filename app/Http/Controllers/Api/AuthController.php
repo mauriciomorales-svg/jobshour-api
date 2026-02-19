@@ -80,11 +80,21 @@ class AuthController extends Controller
         $workerData = null;
         if ($user->worker) {
             $isActive = $user->worker->availability_status === 'active';
+            
+            // Determinar si el perfil está completo
+            // Un perfil completo requiere: categoría, tarifa, y al menos avatar o bio
+            $hasCategory = !empty($user->worker->category_id);
+            $hasRate = !empty($user->worker->hourly_rate);
+            $hasProfileData = !empty($user->worker->avatar) || !empty($user->worker->bio);
+            $profileCompleted = $hasCategory && $hasRate && $hasProfileData;
+            
             $workerData = [
                 'id' => $user->worker->id,
                 'is_active' => $isActive,
                 'availability_status' => $user->worker->availability_status,
                 'category_id' => $user->worker->category_id,
+                'hourly_rate' => $user->worker->hourly_rate,
+                'profile_completed' => $profileCompleted,
             ];
         }
         

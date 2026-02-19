@@ -27,6 +27,15 @@ class User extends Authenticatable
         'nickname',
         'fcm_token',
         'fcm_token_updated_at',
+        'credits_balance',
+        'is_pioneer',
+        'is_company',
+        'company_rut',
+        'company_razon_social',
+        'company_giro',
+        'is_business',
+        'business_name',
+        'business_type',
     ];
 
     protected $hidden = [
@@ -38,6 +47,8 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'is_active' => 'boolean',
+        'is_pioneer' => 'boolean',
+        'is_company' => 'boolean',
     ];
 
     public function worker(): HasOne

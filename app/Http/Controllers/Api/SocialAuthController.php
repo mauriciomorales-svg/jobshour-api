@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Worker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -128,6 +129,15 @@ class SocialAuthController extends Controller
                 'type' => 'employer', // Default type
                 'is_active' => true,
             ]);
+        }
+
+        // Asegurar que el usuario tenga un Worker (para poder tomar demandas)
+        if (!$user->worker) {
+            Worker::create([
+                'user_id' => $user->id,
+                'availability_status' => 'intermediate',
+            ]);
+            \Log::info('Worker creado automáticamente para user: ' . $user->id);
         }
 
         // Generar token Sanctum

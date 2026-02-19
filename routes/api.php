@@ -85,6 +85,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/demand/nearby', [DemandMapController::class, 'nearby'])->middleware('throttle:nearby');
     Route::get('/demand/{serviceRequest}', [DemandMapController::class, 'show']);
 
+    // Take demand - ruta pública con auth manual (bypass middleware issues)
+    Route::post('/demand/{serviceRequest}/take-public', [DemandMapController::class, 'takePublic']);
+
     // Dashboard de 36 Nodos - Público
     Route::get('/dashboard/feed', [DashboardController::class, 'feed']);
     Route::get('/dashboard/live-stats', [DashboardController::class, 'liveStats']);

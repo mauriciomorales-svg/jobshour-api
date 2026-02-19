@@ -28,6 +28,12 @@ class Nudge extends Model
         if ($nudges->isEmpty()) return null;
 
         $totalWeight = $nudges->sum('weight');
+        
+        // Si todos los weights son 0 o negativos, retornar uno aleatorio simple
+        if ($totalWeight <= 0) {
+            return $nudges->random();
+        }
+        
         $roll = random_int(1, $totalWeight);
         $cumulative = 0;
 

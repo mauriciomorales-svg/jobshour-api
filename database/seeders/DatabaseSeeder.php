@@ -14,6 +14,11 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // Ejecutar seeder principal de Renaico
+        $this->call(RenaicoTestSeeder::class);
+        return;
+        
+        // Código anterior comentado - usar RenaicoTestSeeder en su lugar
         // ── Centro de Renaico como referencia ──
         $centerLat = -37.6672;
         $centerLng = -72.5730;
@@ -38,7 +43,7 @@ class DatabaseSeeder extends Seeder
             $categoryMap[$c['slug']] = $cat->id;
         }
 
-        // ── WORKERS ── (Coordenadas reales de intersecciones de calles principales de Renaico)
+        // ── WORKERS ── (Distribuidos por diferentes sectores de Renaico y alrededores)
         $workers = [
             [
                 'name' => 'Juan Pérez',
@@ -53,8 +58,8 @@ class DatabaseSeeder extends Seeder
                 'rating' => 4.9,
                 'rating_count' => 87,
                 'total_jobs_completed' => 134,
-                'lat' => -37.6680,
-                'lng' => -72.5735,
+                'lat' => -37.6620,  // Sector Norte - Av. Bernardo O'Higgins
+                'lng' => -72.5680,
             ],
             [
                 'name' => 'Marta Soto',
@@ -69,8 +74,8 @@ class DatabaseSeeder extends Seeder
                 'rating' => 5.0,
                 'rating_count' => 62,
                 'total_jobs_completed' => 98,
-                'lat' => -37.6665,
-                'lng' => -72.5720,
+                'lat' => -37.6720,  // Sector Sur - Villa Los Aromos
+                'lng' => -72.5780,
             ],
             [
                 'name' => 'Carlos Torres',
@@ -85,8 +90,8 @@ class DatabaseSeeder extends Seeder
                 'rating' => 4.7,
                 'rating_count' => 45,
                 'total_jobs_completed' => 76,
-                'lat' => -37.6670,
-                'lng' => -72.5745,
+                'lat' => -37.6650,  // Sector Este - Población Esperanza
+                'lng' => -72.5650,
             ],
             [
                 'name' => 'Elena Rivas',
@@ -101,8 +106,8 @@ class DatabaseSeeder extends Seeder
                 'rating' => 4.8,
                 'rating_count' => 120,
                 'total_jobs_completed' => 210,
-                'lat' => -37.6675,
-                'lng' => -72.5728,
+                'lat' => -37.6690,  // Sector Oeste - Calle Comercio
+                'lng' => -72.5820,
             ],
             [
                 'name' => 'Roberto Muñoz',
@@ -117,8 +122,8 @@ class DatabaseSeeder extends Seeder
                 'rating' => 4.6,
                 'rating_count' => 38,
                 'total_jobs_completed' => 55,
-                'lat' => -37.6668,
-                'lng' => -72.5738,
+                'lat' => -37.6672,  // Centro - Santiago Watt (cerca DondeMorales)
+                'lng' => -72.5730,
             ],
             [
                 'name' => 'Andrea López',
@@ -133,8 +138,8 @@ class DatabaseSeeder extends Seeder
                 'rating' => 4.9,
                 'rating_count' => 73,
                 'total_jobs_completed' => 145,
-                'lat' => -37.6662,
-                'lng' => -72.5732,
+                'lat' => -37.6600,  // Sector Noreste - Villa Los Alerces
+                'lng' => -72.5700,
             ],
             [
                 'name' => 'Diego Fuentes',
@@ -149,8 +154,8 @@ class DatabaseSeeder extends Seeder
                 'rating' => 4.5,
                 'rating_count' => 56,
                 'total_jobs_completed' => 89,
-                'lat' => -37.6678,
-                'lng' => -72.5722,
+                'lat' => -37.6740,  // Sector Suroeste - Av. La Paz
+                'lng' => -72.5800,
             ],
             [
                 'name' => 'Patricia Herrera',
@@ -165,8 +170,8 @@ class DatabaseSeeder extends Seeder
                 'rating' => 4.8,
                 'rating_count' => 95,
                 'total_jobs_completed' => 180,
-                'lat' => -37.6672,
-                'lng' => -72.5715,
+                'lat' => -37.6630,  // Sector Noroeste - Pasaje Los Cipreses
+                'lng' => -72.5760,
             ],
             [
                 'name' => 'Felipe Contreras',
@@ -181,8 +186,8 @@ class DatabaseSeeder extends Seeder
                 'rating' => 4.7,
                 'rating_count' => 41,
                 'total_jobs_completed' => 67,
-                'lat' => -37.6685,
-                'lng' => -72.5740,
+                'lat' => -37.6710,  // Sector Sureste - Calle Victoria
+                'lng' => -72.5670,
             ],
             [
                 'name' => 'Camila Navarro',
@@ -197,8 +202,24 @@ class DatabaseSeeder extends Seeder
                 'rating' => 5.0,
                 'rating_count' => 110,
                 'total_jobs_completed' => 230,
-                'lat' => -37.6660,
-                'lng' => -72.5750,
+                'lat' => -37.6580,  // Sector Norte extremo - Pasaje Los Robles
+                'lng' => -72.5720,
+            ],
+            [
+                'name' => 'Mauricio Morales',
+                'email' => 'mauricio.morales@usach.cl',
+                'phone' => '+56912345678',
+                'avatar' => 'https://lh3.googleusercontent.com/a/default-user',  // Se actualizará con foto real de Google al hacer login
+                'title' => 'Electricidad Profesional',
+                'bio' => 'Ingeniero eléctrico con experiencia en instalaciones residenciales y comerciales.',
+                'skills' => ['electricidad', 'instalaciones', 'mantención', 'proyectos eléctricos'],
+                'category_slug' => 'electricidad',
+                'hourly_rate' => 25000,
+                'rating' => 4.9,
+                'rating_count' => 45,
+                'total_jobs_completed' => 78,
+                'lat' => -37.6655,  // Centro-Este de Renaico
+                'lng' => -72.5710,
             ],
         ];
 
@@ -215,7 +236,7 @@ class DatabaseSeeder extends Seeder
 
         // Crear workers (user + worker profile)
         foreach ($workers as $w) {
-            $user = User::create([
+            $userData = [
                 'name' => $w['name'],
                 'email' => $w['email'],
                 'phone' => $w['phone'],
@@ -223,7 +244,16 @@ class DatabaseSeeder extends Seeder
                 'type' => 'worker',
                 'avatar' => $w['avatar'],
                 'is_active' => true,
-            ]);
+            ];
+
+            // Si es mauricio.morales@usach.cl, agregar datos de Google OAuth
+            if ($w['email'] === 'mauricio.morales@usach.cl') {
+                $userData['provider'] = 'google';
+                $userData['provider_id'] = '117234567890123456789'; // ID ficticio de Google
+                $userData['avatar_url'] = $w['avatar'];
+            }
+
+            $user = User::create($userData);
 
             $worker = Worker::create([
                 'user_id' => $user->id,

@@ -7,6 +7,7 @@ use Illuminate\Auth\AuthenticationException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
+        web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
@@ -14,9 +15,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->statefulApi();
         
-        // Deshabilitar CSRF para rutas API
+        // Deshabilitar CSRF para rutas API y web root
         $middleware->validateCsrfTokens(except: [
             'api/*',
+            '/',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

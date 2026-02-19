@@ -1,0 +1,172 @@
+<!DOCTYPE html><html lang="es"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="/_next/static/css/app/layout.css?v=1771460551325" data-precedence="next_static/css/app/layout.css"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/webpack.js?v=1771460551325"/><script src="/_next/static/chunks/main-app.js?v=1771460551325" async=""></script><script src="/_next/static/chunks/app-pages-internals.js" async=""></script><script src="/_next/static/chunks/app/page.js" async=""></script><title>Jobshour | Encuentra expertos cerca de ti</title><meta name="description" content="Plataforma de servicios y trabajos por hora en Renaico"/><script>
+              (function() {
+                if (typeof window === 'undefined') return;
+                const originalError = console.error;
+                const originalWarn = console.warn;
+                const originalLog = console.log;
+                const originalInfo = console.info;
+                
+                const shouldFilter = (args) => {
+                  const fullMessage = args.map(a => {
+                    if (typeof a === 'string') return a;
+                    if (a === null || a === undefined) return String(a);
+                    if (typeof a === 'function') return a.toString();
+                    if (a && typeof a === 'object') {
+                      if (a.stack) return a.stack;
+                      if (a.message) return a.message;
+                      if (a.name) return a.name;
+                      try {
+                        const str = JSON.stringify(a);
+                        return str.length > 500 ? str.substring(0, 500) : str;
+                      } catch { return String(a); }
+                    }
+                    return String(a);
+                  }).join(' ');
+                  
+                  if (fullMessage.includes('Download the React DevTools') ||
+                      fullMessage.includes('reactjs.org/link/react-devtools') ||
+                      fullMessage.includes('Function components cannot be given refs') ||
+                      fullMessage.includes('Did you mean to use React.forwardRef') ||
+                      fullMessage.includes('Check the render method of') ||
+                      fullMessage.includes('Attempts to access this ref will fail') ||
+                      fullMessage.includes('RedirectBoundary') ||
+                      fullMessage.includes('NotFoundErrorBoundary') ||
+                      fullMessage.includes('NotFoundBoundary') ||
+                      fullMessage.includes('DevRootNotFoundBoundary') ||
+                      fullMessage.includes('ReactDevOverlay') ||
+                      fullMessage.includes('webpack-internal://') ||
+                      fullMessage.includes('app-pages-browser') ||
+                      fullMessage.includes('app-index.js') ||
+                      fullMessage.includes('main-app.js') ||
+                      fullMessage.includes('at RedirectBoundary') ||
+                      fullMessage.includes('at NotFoundErrorBoundary') ||
+                      fullMessage.includes('at ReactDevOverlay') ||
+                      fullMessage.includes('at InnerLayoutRouter') ||
+                      fullMessage.includes('at ClientPageRoot') ||
+                      fullMessage.includes('at RootLayout') ||
+                      fullMessage.includes('react-dom.development') ||
+                      fullMessage.includes('validateFunctionComponentInDev')) {
+                    return true;
+                  }
+                  
+                  if (args.length > 0 && typeof args[0] === 'string' && args[0].includes('Warning:')) {
+                    if (fullMessage.includes('Function components') || fullMessage.includes('RedirectBoundary') || fullMessage.includes('NotFoundBoundary')) {
+                      return true;
+                    }
+                  }
+                  
+                  return false;
+                };
+                
+                console.error = function(...args) { if (!shouldFilter(args)) originalError.apply(console, args); };
+                console.warn = function(...args) { if (!shouldFilter(args)) originalWarn.apply(console, args); };
+                console.log = function(...args) { if (!shouldFilter(args)) originalLog.apply(console, args); };
+                console.info = function(...args) { if (!shouldFilter(args)) originalInfo.apply(console, args); };
+              })();
+            </script><script src="/_next/static/chunks/polyfills.js" noModule=""></script></head><body class="antialiased font-sans bg-white"><div class="h-screen w-screen overflow-hidden relative"><div class="absolute inset-0 pt-[180px] pb-[80px]"><!--$!--><template data-dgst="BAILOUT_TO_CLIENT_SIDE_RENDERING" data-msg="Bail out to client-side rendering: next/dynamic" data-stck="
+    at BailoutToCSR (webpack-internal:///(ssr)/./node_modules/next/dist/shared/lib/lazy-dynamic/dynamic-bailout-to-csr.js:13:11)
+    at Suspense
+    at LoadableComponent
+    at div
+    at div
+    at Home (webpack-internal:///(ssr)/./src/app/page.tsx:142:80)
+    at ClientPageRoot (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/client-page.js:14:11)
+    at Lazy
+    at InnerLayoutRouter (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:242:11)
+    at RedirectErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:73:9)
+    at RedirectBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:81:11)
+    at NotFoundErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/not-found-boundary.js:76:9)
+    at NotFoundBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/not-found-boundary.js:84:11)
+    at LoadingBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:347:11)
+    at ErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/error-boundary.js:158:11)
+    at InnerScrollAndFocusHandler (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:153:9)
+    at ScrollAndFocusHandler (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:228:11)
+    at RenderFromTemplateContext (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/render-from-template-context.js:16:44)
+    at Lazy
+    at OuterLayoutRouter (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:367:11)
+    at Lazy
+    at body
+    at html
+    at RedirectErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:73:9)
+    at RedirectBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:81:11)
+    at ReactDevOverlay (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/react-dev-overlay/app/ReactDevOverlay.js:87:9)
+    at HotReload (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/react-dev-overlay/app/hot-reloader-client.js:322:11)
+    at Router (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/app-router.js:202:11)
+    at ErrorBoundaryHandler (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/error-boundary.js:112:9)
+    at ErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/error-boundary.js:158:11)
+    at AppRouter (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/app-router.js:564:13)
+    at Lazy
+    at r7 (C:\wamp64\www\jobshour-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:40:19155)
+    at r7 (C:\wamp64\www\jobshour-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:40:19155)
+    at ServerInsertedHTMLProvider (C:\wamp64\www\jobshour-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:40:24939)"></template><!--/$--></div><div class="absolute top-0 left-0 right-0 z-[100] pointer-events-none"><div class="bg-white border-b border-gray-200 px-4 py-3 pointer-events-auto shadow-sm"><div class="flex items-center justify-between"><button class="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-xl text-gray-800 font-bold text-sm transition-all hover:scale-105"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 6h16M4 12h16M4 18h16"></path></svg><span>MENÚ</span></button><div class="flex items-center gap-2"><div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center"><svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"></path></svg></div><div class="flex items-baseline gap-0.5"><span class="font-black text-blue-900 text-lg tracking-tight">JOBS</span><span class="font-black text-blue-500 text-lg tracking-tight">HOURS</span></div></div><button class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg hover:scale-105"><span>INGRESAR</span><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path></svg></button></div></div><div class="bg-white border-b border-gray-200 px-4 py-3 pointer-events-auto"><div class="flex items-center bg-gray-50 rounded-xl px-4 py-2.5 border border-gray-200 shadow-sm"><svg class="w-5 h-5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg><input type="text" placeholder="Buscar trabajadores..." class="flex-1 bg-transparent outline-none text-sm text-gray-800 placeholder:text-gray-400 ml-3" value=""/></div></div><div class="bg-white px-4 pb-3 pointer-events-auto"><div class="flex gap-2 overflow-x-auto scrollbar-hide"></div></div></div><div class="fixed inset-0 z-[150] transition-all duration-500 ease-out translate-y-full opacity-0 pointer-events-none"><div class="bg-slate-900 h-full w-full overflow-hidden flex flex-col shadow-2xl"><div class="sticky top-0 bg-slate-900 px-4 pt-4 pb-3 border-b border-slate-700/50 z-10 flex items-center justify-between"><h2 class="text-xl font-black text-white">Feed de Oportunidades</h2><button class="w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded-lg flex items-center justify-center transition border border-slate-700" title="Cerrar dashboard"><svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button></div><div class="flex-1 overflow-y-auto"><!--$!--><template data-dgst="BAILOUT_TO_CLIENT_SIDE_RENDERING" data-msg="Bail out to client-side rendering: next/dynamic" data-stck="
+    at BailoutToCSR (webpack-internal:///(ssr)/./node_modules/next/dist/shared/lib/lazy-dynamic/dynamic-bailout-to-csr.js:13:11)
+    at Suspense
+    at LoadableComponent
+    at div
+    at div
+    at div
+    at div
+    at Home (webpack-internal:///(ssr)/./src/app/page.tsx:142:80)
+    at ClientPageRoot (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/client-page.js:14:11)
+    at Lazy
+    at InnerLayoutRouter (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:242:11)
+    at RedirectErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:73:9)
+    at RedirectBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:81:11)
+    at NotFoundErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/not-found-boundary.js:76:9)
+    at NotFoundBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/not-found-boundary.js:84:11)
+    at LoadingBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:347:11)
+    at ErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/error-boundary.js:158:11)
+    at InnerScrollAndFocusHandler (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:153:9)
+    at ScrollAndFocusHandler (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:228:11)
+    at RenderFromTemplateContext (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/render-from-template-context.js:16:44)
+    at Lazy
+    at OuterLayoutRouter (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:367:11)
+    at Lazy
+    at body
+    at html
+    at RedirectErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:73:9)
+    at RedirectBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:81:11)
+    at ReactDevOverlay (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/react-dev-overlay/app/ReactDevOverlay.js:87:9)
+    at HotReload (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/react-dev-overlay/app/hot-reloader-client.js:322:11)
+    at Router (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/app-router.js:202:11)
+    at ErrorBoundaryHandler (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/error-boundary.js:112:9)
+    at ErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/error-boundary.js:158:11)
+    at AppRouter (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/app-router.js:564:13)
+    at Lazy
+    at r7 (C:\wamp64\www\jobshour-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:40:19155)
+    at r7 (C:\wamp64\www\jobshour-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:40:19155)
+    at ServerInsertedHTMLProvider (C:\wamp64\www\jobshour-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:40:24939)"></template><!--/$--></div></div></div><!--$!--><template data-dgst="BAILOUT_TO_CLIENT_SIDE_RENDERING" data-msg="Bail out to client-side rendering: next/dynamic" data-stck="
+    at BailoutToCSR (webpack-internal:///(ssr)/./node_modules/next/dist/shared/lib/lazy-dynamic/dynamic-bailout-to-csr.js:13:11)
+    at Suspense
+    at LoadableComponent
+    at div
+    at Home (webpack-internal:///(ssr)/./src/app/page.tsx:142:80)
+    at ClientPageRoot (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/client-page.js:14:11)
+    at Lazy
+    at InnerLayoutRouter (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:242:11)
+    at RedirectErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:73:9)
+    at RedirectBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:81:11)
+    at NotFoundErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/not-found-boundary.js:76:9)
+    at NotFoundBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/not-found-boundary.js:84:11)
+    at LoadingBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:347:11)
+    at ErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/error-boundary.js:158:11)
+    at InnerScrollAndFocusHandler (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:153:9)
+    at ScrollAndFocusHandler (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:228:11)
+    at RenderFromTemplateContext (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/render-from-template-context.js:16:44)
+    at Lazy
+    at OuterLayoutRouter (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/layout-router.js:367:11)
+    at Lazy
+    at body
+    at html
+    at RedirectErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:73:9)
+    at RedirectBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/redirect-boundary.js:81:11)
+    at ReactDevOverlay (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/react-dev-overlay/app/ReactDevOverlay.js:87:9)
+    at HotReload (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/react-dev-overlay/app/hot-reloader-client.js:322:11)
+    at Router (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/app-router.js:202:11)
+    at ErrorBoundaryHandler (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/error-boundary.js:112:9)
+    at ErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/error-boundary.js:158:11)
+    at AppRouter (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/app-router.js:564:13)
+    at Lazy
+    at r7 (C:\wamp64\www\jobshour-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:40:19155)
+    at r7 (C:\wamp64\www\jobshour-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:40:19155)
+    at ServerInsertedHTMLProvider (C:\wamp64\www\jobshour-web\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:40:24939)"></template><!--/$--><div class="fixed bottom-4 left-0 right-0 z-[90] px-4 pointer-events-none"><div class="flex items-center justify-between gap-3 pointer-events-auto"><button class="flex-1 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 hover:from-amber-600 hover:via-orange-600 hover:to-red-600 text-white font-black py-3.5 px-5 rounded-2xl shadow-2xl shadow-amber-500/40 transition-all active:scale-95 flex items-center justify-center gap-2 border border-white/20 backdrop-blur-sm"><span class="text-lg">💰</span><span class="text-sm">Feed de Oportunidades</span></button><button class="flex-1 font-black py-3.5 px-5 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2 bg-gradient-to-r from-slate-500 to-slate-600 text-white shadow-lg"><span class="text-sm">Modo Trabajo:</span><span class="text-sm font-black">PLOMO</span></button></div></div><div class="absolute inset-0 flex items-center justify-center z-[150] bg-white/50"><div class="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div></div></div><script src="/_next/static/chunks/webpack.js?v=1771460551325" async=""></script><script>(self.__next_f=self.__next_f||[]).push([0]);self.__next_f.push([2,null])</script><script>self.__next_f.push([1,"1:HL[\"/_next/static/css/app/layout.css?v=1771460551325\",\"style\"]\n0:D{\"name\":\"r5\",\"env\":\"Server\"}\n"])</script><script>self.__next_f.push([1,"2:I[\"(app-pages-browser)/./node_modules/next/dist/client/components/app-router.js\",[\"app-pages-internals\",\"static/chunks/app-pages-internals.js\"],\"\"]\n4:I[\"(app-pages-browser)/./node_modules/next/dist/client/components/client-page.js\",[\"app-pages-internals\",\"static/chunks/app-pages-internals.js\"],\"ClientPageRoot\"]\n5:I[\"(app-pages-browser)/./src/app/page.tsx\",[\"app/page\",\"static/chunks/app/page.js\"],\"default\",1]\n8:I[\"(app-pages-browser)/./node_modules/next/dist/client/components/layout-router.js\",[\"app-pages-internals\",\"static/chunks/app-pages-internals.js\"],\"\"]\n9:I[\"(app-pages-browser)/./node_modules/next/dist/client/components/render-from-template-context.js\",[\"app-pages-internals\",\"static/chunks/app-pages-internals.js\"],\"\"]\nd:I[\"(app-pages-browser)/./node_modules/next/dist/client/components/error-boundary.js\",[\"app-pages-internals\",\"static/chunks/app-pages-internals.js\"],\"\"]\n3:D{\"name\":\"\",\"env\":\"Server\"}\n6:D{\"name\":\"RootLayout\",\"env\":\"Server\"}\n7:Ted0,"])</script><script>self.__next_f.push([1,"\n              (function() {\n                if (typeof window === 'undefined') return;\n                const originalError = console.error;\n                const originalWarn = console.warn;\n                const originalLog = console.log;\n                const originalInfo = console.info;\n                \n                const shouldFilter = (args) =\u003e {\n                  const fullMessage = args.map(a =\u003e {\n                    if (typeof a === 'string') return a;\n                    if (a === null || a === undefined) return String(a);\n                    if (typeof a === 'function') return a.toString();\n                    if (a \u0026\u0026 typeof a === 'object') {\n                      if (a.stack) return a.stack;\n                      if (a.message) return a.message;\n                      if (a.name) return a.name;\n                      try {\n                        const str = JSON.stringify(a);\n                        return str.length \u003e 500 ? str.substring(0, 500) : str;\n                      } catch { return String(a); }\n                    }\n                    return String(a);\n                  }).join(' ');\n                  \n                  if (fullMessage.includes('Download the React DevTools') ||\n                      fullMessage.includes('reactjs.org/link/react-devtools') ||\n                      fullMessage.includes('Function components cannot be given refs') ||\n                      fullMessage.includes('Did you mean to use React.forwardRef') ||\n                      fullMessage.includes('Check the render method of') ||\n                      fullMessage.includes('Attempts to access this ref will fail') ||\n                      fullMessage.includes('RedirectBoundary') ||\n                      fullMessage.includes('NotFoundErrorBoundary') ||\n                      fullMessage.includes('NotFoundBoundary') ||\n                      fullMessage.includes('DevRootNotFoundBoundary') ||\n                      fullMessage.includes('ReactDevOverlay') ||\n                      fullMessage.includes('webpack-internal://') ||\n                      fullMessage.includes('app-pages-browser') ||\n                      fullMessage.includes('app-index.js') ||\n                      fullMessage.includes('main-app.js') ||\n                      fullMessage.includes('at RedirectBoundary') ||\n                      fullMessage.includes('at NotFoundErrorBoundary') ||\n                      fullMessage.includes('at ReactDevOverlay') ||\n                      fullMessage.includes('at InnerLayoutRouter') ||\n                      fullMessage.includes('at ClientPageRoot') ||\n                      fullMessage.includes('at RootLayout') ||\n                      fullMessage.includes('react-dom.development') ||\n                      fullMessage.includes('validateFunctionComponentInDev')) {\n                    return true;\n                  }\n                  \n                  if (args.length \u003e 0 \u0026\u0026 typeof args[0] === 'string' \u0026\u0026 args[0].includes('Warning:')) {\n                    if (fullMessage.includes('Function components') || fullMessage.includes('RedirectBoundary') || fullMessage.includes('NotFoundBoundary')) {\n                      return true;\n                    }\n                  }\n                  \n                  return false;\n                };\n                \n                console.error = function(...args) { if (!shouldFilter(args)) originalError.apply(console, args); };\n                console.warn = function(...args) { if (!shouldFilter(args)) originalWarn.apply(console, args); };\n                console.log = function(...args) { if (!shouldFilter(args)) originalLog.apply(console, args); };\n                console.info = function(...args) { if (!shouldFilter(args)) originalInfo.apply(console, args); };\n              })();\n            "])</script><script>self.__next_f.push([1,"a:D{\"name\":\"NotFound\",\"env\":\"Server\"}\na:[[\"$\",\"title\",null,{\"children\":\"404: This page could not be found.\"}],[\"$\",\"div\",null,{\"style\":{\"fontFamily\":\"system-ui,\\\"Segoe UI\\\",Roboto,Helvetica,Arial,sans-serif,\\\"Apple Color Emoji\\\",\\\"Segoe UI Emoji\\\"\",\"height\":\"100vh\",\"textAlign\":\"center\",\"display\":\"flex\",\"flexDirection\":\"column\",\"alignItems\":\"center\",\"justifyContent\":\"center\"},\"children\":[\"$\",\"div\",null,{\"children\":[[\"$\",\"style\",null,{\"dangerouslySetInnerHTML\":{\"__html\":\"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}\"}}],[\"$\",\"h1\",null,{\"className\":\"next-error-h1\",\"style\":{\"display\":\"inline-block\",\"margin\":\"0 20px 0 0\",\"padding\":\"0 23px 0 0\",\"fontSize\":24,\"fontWeight\":500,\"verticalAlign\":\"top\",\"lineHeight\":\"49px\"},\"children\":\"404\"}],[\"$\",\"div\",null,{\"style\":{\"display\":\"inline-block\"},\"children\":[\"$\",\"h2\",null,{\"style\":{\"fontSize\":14,\"fontWeight\":400,\"lineHeight\":\"49px\",\"margin\":0},\"children\":\"This page could not be found.\"}]}]]}]}]]\n6:[\"$\",\"html\",null,{\"lang\":\"es\",\"children\":[[\"$\",\"head\",null,{\"children\":[\"$\",\"script\",null,{\"dangerouslySetInnerHTML\":{\"__html\":\"$7\"}}]}],[\"$\",\"body\",null,{\"className\":\"antialiased font-sans bg-white\",\"children\":[\"$\",\"$L8\",null,{\"parallelRouterKey\":\"children\",\"segmentPath\":[\"children\"],\"error\":\"$undefined\",\"errorStyles\":\"$undefined\",\"errorScripts\":\"$undefined\",\"template\":[\"$\",\"$L9\",null,{}],\"templateStyles\":\"$undefined\",\"templateScripts\":\"$undefined\",\"notFound\":\"$a\",\"notFoundStyles\":[]}]}]]}]\nb:D{\"name\":\"r6\",\"env\":\"Server\"}\nb:null\nc:D{\"name\":\"\",\"env\":\"Server\"}\ne:[]\n0:[\"$\",\"$L2\",null,{\"buildId\":\"development\",\"assetPrefix\":\"\",\"urlParts\":[\"\",\"\"],\"initialTree\":[\"\",{\"children\":[\"__PAGE__\",{}]},\"$undefined\",\"$undefined\",true],\"initialSeedData\":[\"\",{\"children\":[\"__PAGE__\",{},[[\"$L3\",[\"$\",\"$L4\",null,{\"props\":{\"params\":{},\"searchParams\":{}},\"Component\":\"$5\"}],null],null],null]},[[[[\"$\",\"link\",\"0\",{\"rel\":\"stylesheet\",\"href\""])</script><script>self.__next_f.push([1,":\"/_next/static/css/app/layout.css?v=1771460551325\",\"precedence\":\"next_static/css/app/layout.css\",\"crossOrigin\":\"$undefined\"}]],\"$6\"],null],null],\"couldBeIntercepted\":false,\"initialHead\":[\"$b\",\"$Lc\"],\"globalErrorComponent\":\"$d\",\"missingSlots\":\"$We\"}]\n"])</script><script>self.__next_f.push([1,"c:[[\"$\",\"meta\",\"0\",{\"name\":\"viewport\",\"content\":\"width=device-width, initial-scale=1\"}],[\"$\",\"meta\",\"1\",{\"charSet\":\"utf-8\"}],[\"$\",\"title\",\"2\",{\"children\":\"Jobshour | Encuentra expertos cerca de ti\"}],[\"$\",\"meta\",\"3\",{\"name\":\"description\",\"content\":\"Plataforma de servicios y trabajos por hora en Renaico\"}]]\n3:null\n"])</script></body></html>
