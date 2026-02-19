@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -13,6 +16,34 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        //
+        // Búsqueda de workers en mapa — 30 req/min por IP
+        RateLimiter::for('nearby', function (Request $request) {
+            return Limit::perMinute(30)->by($request->ip());
+        });
+
+        // Cambio de estado worker — 20 req/min por usuario
+        RateLimiter::for('worker-status', function (Request $request) {
+            return Limit::perMinute(20)->by($request->user()?->id ?? $request->ip());
+        });
+
+        // Autenticación — 10 intentos/min por IP
+        RateLimiter::for('auth', function (Request $request) {
+            return Limit::perMinute(10)->by($request->ip());
+        });
+
+        // Solicitudes de servicio — 15 req/min por usuario
+        RateLimiter::for('requests', function (Request $request) {
+            return Limit::perMinute(15)->by($request->user()?->id ?? $request->ip());
+        });
+
+        // Chat — 60 mensajes/min por usuario
+        RateLimiter::for('chat', function (Request $request) {
+            return Limit::perMinute(60)->by($request->user()?->id ?? $request->ip());
+        });
+
+        // Publicar demanda — 5 req/min por usuario (evitar spam)
+        RateLimiter::for('demand', function (Request $request) {
+            return Limit::perMinute(5)->by($request->user()?->id ?? $request->ip());
+        });
     }
 }

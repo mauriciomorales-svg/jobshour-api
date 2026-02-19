@@ -32,6 +32,13 @@
       0 => 'Laravel\\Socialite\\SocialiteServiceProvider',
     ),
   ),
+  'laravel/telescope' => 
+  array (
+    'providers' => 
+    array (
+      0 => 'Laravel\\Telescope\\TelescopeServiceProvider',
+    ),
+  ),
   'nesbot/carbon' => 
   array (
     'providers' => 

@@ -16,9 +16,11 @@ class Worker extends Model
         'category_id',
         'title',
         'bio',
+        'bio_tarjeta',
         'skills',
         'hourly_rate',
         'availability_status',
+        'user_mode',
         'last_seen_at',
         'location',
         'location_accuracy',
@@ -52,6 +54,13 @@ class Worker extends Model
         return $this->belongsTo(Category::class);
     }
 
+    public function categories()
+    {
+        return $this->belongsToMany(Category::class, 'worker_categories')
+            ->withPivot('is_primary')
+            ->withTimestamps();
+    }
+
     public function videos(): HasMany
     {
         return $this->hasMany(Video::class);
@@ -75,6 +84,11 @@ class Worker extends Model
     public function jobs(): HasMany
     {
         return $this->hasMany(Job::class, 'worker_id');
+    }
+
+    public function experiences(): HasMany
+    {
+        return $this->hasMany(WorkerExperience::class);
     }
 
     // ACCESSORS DESHABILITADOS - Causan N+1 queries que cuelgan Laravel

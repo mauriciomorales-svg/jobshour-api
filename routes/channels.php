@@ -24,6 +24,13 @@ Broadcast::channel('chat.{serviceRequestId}', function ($user, $serviceRequestId
     return $user->id === $sr->client_id || $user->id === $sr->worker->user_id;
 });
 
+// Canal de tracking por solicitud (solo participantes)
+Broadcast::channel('request.{serviceRequestId}', function ($user, $serviceRequestId) {
+    $sr = \App\Models\ServiceRequest::find($serviceRequestId);
+    if (!$sr) return false;
+    return $user->id === $sr->client_id || ($sr->worker && $user->id === $sr->worker->user_id);
+});
+
 // Legacy channels
 Broadcast::channel('workers.{workerId}', function ($user, $workerId) {
     return $user->id === (int) $workerId;
