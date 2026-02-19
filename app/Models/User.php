@@ -36,6 +36,9 @@ class User extends Authenticatable
         'is_business',
         'business_name',
         'business_type',
+        'rut',
+        'rut_verified',
+        'rut_verified_at',
     ];
 
     protected $hidden = [

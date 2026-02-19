@@ -209,6 +209,10 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::post('/travel-requests/{requestId}/reject', [TravelRequestController::class, 'reject']);
     Route::get('/travel-requests/{requestId}/track', [TravelRequestController::class, 'track']);
 
+    // Verificación RUT
+    Route::post('/rut/verify', [\App\Http\Controllers\Api\V1\RutVerificationController::class, 'verify']);
+    Route::get('/rut/status', [\App\Http\Controllers\Api\V1\RutVerificationController::class, 'status']);
+
     // Admin Panel
     Route::prefix('admin')->group(function () {
         Route::get('/stats', [AdminController::class, 'stats']);
