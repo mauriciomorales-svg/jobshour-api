@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\V1\DiagnosticController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\ReviewController;
 use App\Http\Controllers\Api\V1\AdminController;
+use App\Http\Controllers\Api\V1\OnboardingController;
 
 use App\Http\Controllers\Api\WorkerProfileController;
 use App\Http\Controllers\Api\FriendsController;
@@ -172,6 +173,9 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::delete('/notifications/{notification}', [\App\Http\Controllers\Api\V1\NotificationController::class, 'destroy']);
     Route::get('/notifications/preferences', [\App\Http\Controllers\Api\V1\NotificationController::class, 'preferences']);
     Route::post('/notifications/preferences', [\App\Http\Controllers\Api\V1\NotificationController::class, 'preferences']);
+
+    // Worker Onboarding (datos mínimos: ubicación, categoría, tarifa)
+    Route::post('/worker/onboarding', [OnboardingController::class, 'store']);
 
     // Worker Mode (3 estados: OFF → ACTIVE → LISTENING)
     Route::post('/worker/status', [WorkerModeController::class, 'status'])->middleware('throttle:worker-status');
