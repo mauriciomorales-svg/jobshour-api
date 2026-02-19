@@ -9,7 +9,9 @@ use App\Models\ProfileView;
 use App\Events\ProfileViewed;
 use App\Services\GeocodingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ExpertController extends Controller
 {
@@ -18,13 +20,22 @@ class ExpertController extends Controller
 
     public function nearby(Request $request)
     {
-        $validated = $request->validate([
-            'lat' => 'required|numeric|between:-90,90',
-            'lng' => 'required|numeric|between:-180,180',
-            'radius' => 'nullable|numeric|min:0.1|max:100',
-            'categories' => 'nullable|array',
-            'categories.*' => 'integer|exists:categories,id',
-        ]);
+        try {
+            Log::info('ExpertController::nearby called', [
+                'request_params' => $request->all(),
+            ]);
+            
+            $validated = $request->validate([
+                'lat' => 'required|numeric|between:-90,90',
+                'lng' => 'required|numeric|between:-180,180',
+                'radius' => 'nullable|numeric|min:0.1|max:100',
+                'categories' => 'nullable|array',
+                'categories.*' => 'integer|exists:categories,id',
+            ]);
+            
+            Log::info('ExpertController::nearby validation passed', [
+                'validated' => $validated,
+            ]);
 
         $lat = $validated['lat'];
         $lng = $validated['lng'];
@@ -73,56 +84,106 @@ class ExpertController extends Controller
                 'total_found' => $workers->count(),
                 'is_fallback' => $isFallback,
             ],
-            'data' => $workers->map(fn($w) => [
-                'id' => $w->id,
-                'pos' => [
-                    'lat' => $w->lat + (mt_rand(-10, 10) * 0.0001), // fuzzed
-                    'lng' => $w->lng + (mt_rand(-10, 10) * 0.0001), // fuzzed
-                ],
-                'name' => $w->user->nickname ?? $this->shortName($w->user->name),
-                'avatar' => $w->user->avatar,
-                'price' => (int) $w->hourly_rate,
-                'category_color' => $w->category?->color ?? '#2563eb',
-                'category_slug' => $w->category?->slug,
-                'category_name' => $w->category?->display_name,
-                'fresh_score' => (float) $w->fresh_score,
-                'status' => $w->availability_status,
-                'microcopy' => $this->generateMicrocopy($w),
-                'has_video' => $w->videos_count > 0,
-            ])->values(),
+            'data' => $workers->map(function($w) {
+                try {
+                    return [
+                        'id' => $w->id,
+                        'user_id' => $w->user_id, // IMPORTANTE: Incluir user_id para identificar al usuario actual
+                        'pos' => [
+                            'lat' => ($w->lat ?? 0) + (mt_rand(-10, 10) * 0.0001), // fuzzed
+                            'lng' => ($w->lng ?? 0) + (mt_rand(-10, 10) * 0.0001), // fuzzed
+                        ],
+                        'name' => $w->user?->nickname ?? $this->shortName($w->user?->name ?? 'Anónimo'),
+                        'avatar' => $w->user?->avatar,
+                        'price' => (int) ($w->hourly_rate ?? 0),
+                        'category_color' => $w->category?->color ?? '#2563eb',
+                        'category_slug' => $w->category?->slug,
+                        'category_name' => $w->category?->display_name,
+                        'fresh_score' => (float) ($w->rating ?? 0),
+                        'status' => $w->availability_status ?? 'inactive',
+                        'user_mode' => $w->user_mode ?? null, // Incluir user_mode para debugging
+                        'active_route' => $w->active_route ?? null, // Incluir active_route si existe (modo viaje)
+                        'microcopy' => $this->generateMicrocopy($w),
+                        'has_video' => ($w->videos_count ?? 0) > 0,
+                    ];
+                } catch (\Exception $e) {
+                    Log::error('Error mapping worker', [
+                        'worker_id' => $w->id ?? null,
+                        'error' => $e->getMessage(),
+                    ]);
+                    return null;
+                }
+            })->filter()->values(),
         ]);
+        } catch (\Exception $e) {
+            Log::error('ExpertController::nearby error', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => config('app.debug') ? $e->getMessage() : 'Error al buscar expertos',
+                'data' => [],
+                'meta' => [
+                    'center' => ['lat' => $request->input('lat', 0), 'lng' => $request->input('lng', 0)],
+                    'city' => 'Renaico',
+                    'radius_searched' => '0km',
+                    'total_found' => 0,
+                    'is_fallback' => false,
+                ],
+            ], 500);
+        }
     }
 
     public function show(Request $request, Worker $expert)
     {
-        $expert->load(['user:id,name,nickname,avatar,phone', 'category', 'videos', 'showcaseVideo', 'vcVideo']);
+        $expert->load(['user:id,name,nickname,avatar,phone', 'category', 'categories', 'videos', 'showcaseVideo', 'vcVideo']);
 
         // Shadow Interest: log profile view
         $city = GeocodingService::getCityName(
             (float) ($request->query('lat', -37.67)),
             (float) ($request->query('lng', -72.57))
         );
-        ProfileView::create([
-            'worker_id' => $expert->id,
-            'viewer_id' => $request->user()?->id,
-            'viewer_ip' => $request->ip(),
-            'viewer_city' => $city,
-        ]);
 
-        // Notify intermediate worker: someone is looking at their profile
-        if ($expert->isIntermediate()) {
+        $viewerId = $request->user()?->id;
+        $viewerIp = $request->ip();
+
+        // Debounce: only log 1 view per viewer-worker pair per 24h
+        $recentView = ProfileView::where('worker_id', $expert->id)
+            ->where(function ($q) use ($viewerId, $viewerIp) {
+                if ($viewerId) {
+                    $q->where('viewer_id', $viewerId);
+                } else {
+                    $q->where('viewer_ip', $viewerIp);
+                }
+            })
+            ->where('created_at', '>=', now()->subHours(24))
+            ->exists();
+
+        if (!$recentView) {
+            ProfileView::create([
+                'worker_id' => $expert->id,
+                'viewer_id' => $viewerId,
+                'viewer_ip' => $viewerIp,
+                'viewer_city' => $city,
+            ]);
+
+            // Notify worker (debounced: max 1 per viewer per 24h)
             $viewsLastHour = ProfileView::where('worker_id', $expert->id)
                 ->where('created_at', '>=', now()->subHour())
                 ->count();
-            // try {
-            //     broadcast(new ProfileViewed(
-            //         workerUserId: $expert->user_id,
-            //         viewerCity: $city,
-            //         viewCount: $viewsLastHour,
-            //     ));
-            // } catch (\Throwable $e) {
-            //     // Silent fail — don't break the response
-            // }
+            try {
+                broadcast(new ProfileViewed(
+                    workerUserId: $expert->user_id,
+                    viewerCity: $city,
+                    viewCount: $viewsLastHour,
+                ));
+            } catch (\Throwable $e) {
+                // Silent fail — don't break the response
+            }
         }
 
         return response()->json([
@@ -132,7 +193,8 @@ class ExpertController extends Controller
                 'nickname' => $expert->user->nickname,
                 'name' => $expert->isActive() ? $expert->user->name : ($expert->user->nickname ?? $this->shortName($expert->user->name)),
                 'avatar' => $expert->user->avatar,
-                'phone' => $expert->isActive() ? $expert->user->phone : null,
+                'phone' => $expert->user->phone ? $this->maskPhone($expert->user->phone) : null,
+                'phone_revealed' => false,
                 'title' => $expert->title,
                 'bio' => $expert->bio,
                 'skills' => $expert->skills,
@@ -149,6 +211,13 @@ class ExpertController extends Controller
                     'color' => $expert->category->color,
                     'icon' => $expert->category->icon,
                 ] : null,
+                'categories' => $expert->categories->map(fn($cat) => [
+                    'id' => $cat->id,
+                    'slug' => $cat->slug,
+                    'name' => $cat->display_name,
+                    'color' => $cat->color,
+                    'icon' => $cat->icon,
+                ])->toArray(),
                 'videos_count' => $expert->videos->count(),
                 'showcase_video' => $expert->showcaseVideo ? [
                     'url' => $expert->showcaseVideo->processed_path ?? $expert->showcaseVideo->original_path,
@@ -165,36 +234,113 @@ class ExpertController extends Controller
                     'lng' => $expert->fuzzed_longitude,
                 ],
                 'microcopy' => $this->generateMicrocopy($expert),
+                'last_seen' => $this->resolveLastSeen($expert),
             ],
+        ]);
+    }
+
+    public function count(Request $request)
+    {
+        $validated = $request->validate([
+            'lat' => 'required|numeric|between:-90,90',
+            'lng' => 'required|numeric|between:-180,180',
+            'radius' => 'nullable|numeric|min:1|max:50',
+        ]);
+
+        $lat    = $validated['lat'];
+        $lng    = $validated['lng'];
+        $radius = $validated['radius'] ?? 10;
+
+        $cacheKey = "workers_count_{$lat}_{$lng}_{$radius}";
+
+        $count = Cache::remember($cacheKey, 45, function () use ($lat, $lng, $radius) {
+            try {
+                return DB::selectOne("
+                    SELECT COUNT(*) as total
+                    FROM workers
+                    WHERE availability_status = 'active'
+                      AND (user_mode = 'socio' OR user_mode IS NULL)
+                      AND ST_DWithin(
+                            location::geography,
+                            ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+                            ?
+                          )
+                ", [$lng, $lat, $radius * 1000])->total ?? 0;
+            } catch (\Throwable) {
+                return 0;
+            }
+        });
+
+        return response()->json([
+            'count'  => (int) $count,
+            'radius' => $radius,
+            'label'  => $count === 0
+                ? 'Nadie activo cerca'
+                : ($count === 1 ? '1 worker verde cerca' : "{$count} workers verdes cerca"),
         ]);
     }
 
     private function searchVisible(float $lat, float $lng, float $radiusKm, array $categoryIds)
     {
-        $with = ['user:id,name,nickname,avatar', 'category:id,slug,display_name,color'];
+        try {
+            $with = ['user:id,name,nickname,avatar', 'category:id,slug,display_name,color'];
 
-        $select = ['workers.*'];
-        $selectRaw = 'ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng';
+            $select = ['workers.*'];
+            $selectRaw = 'ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng';
 
-        // 🟢 ACTIVE: radio completo
-        $activeQ = Worker::active()->with($with)->withCount('videos')->near($lat, $lng, $radiusKm)
-            ->select($select)->selectRaw($selectRaw);
-        
-        // 🟡 INTERMEDIATE: radio medio 5km (modo escucha)
-        $intRadius = min($radiusKm, 5);
-        $intQ = Worker::where('availability_status', 'intermediate')->with($with)->withCount('videos')->near($lat, $lng, $intRadius)
-            ->select($select)->selectRaw($selectRaw);
+            // 🟢 ACTIVE: radio completo (solo modo socio)
+            $activeQ = Worker::active()->with($with)->withCount('videos')->near($lat, $lng, $radiusKm)
+                ->where(function($q) {
+                    $q->where('user_mode', 'socio')->orWhereNull('user_mode');
+                })
+                ->select($select)->selectRaw($selectRaw);
+            
+            // 🟡 INTERMEDIATE: radio medio 5km (modo escucha, solo modo socio)
+            $intRadius = min($radiusKm, 5);
+            $intQ = Worker::where('availability_status', 'intermediate')->with($with)->withCount('videos')->near($lat, $lng, $intRadius)
+                ->where(function($q) {
+                    $q->where('user_mode', 'socio')->orWhereNull('user_mode');
+                })
+                ->select($select)->selectRaw($selectRaw);
 
-        // ⚫ INACTIVE: No aparecen (invisible)
+            // ⚫ INACTIVE: No aparecen (invisible)
+            // 🏢 EMPRESA: No aparecen en mapa público (solo referencia)
 
-        if (!empty($categoryIds)) {
-            $activeQ->whereIn('category_id', $categoryIds);
-            $intQ->whereIn('category_id', $categoryIds);
+            if (!empty($categoryIds)) {
+                $activeQ->whereIn('category_id', $categoryIds);
+                $intQ->whereIn('category_id', $categoryIds);
+            }
+
+            return $activeQ->get()
+                ->concat($intQ->get())
+                ->unique('id');
+        } catch (\Exception $e) {
+            Log::error('ExpertController::searchVisible error', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return collect(); // Retornar colección vacía en caso de error
+        }
+    }
+
+    private function resolveLastSeen(Worker $worker): ?string
+    {
+        // Primero busca en cache (actualizado al cambiar estado)
+        $cached = Cache::get("worker_last_seen_{$worker->id}");
+        if ($cached) {
+            return $cached;
         }
 
-        return $activeQ->get()
-            ->concat($intQ->get())
-            ->unique('id');
+        // Fallback: campo last_seen_at de la BD
+        if ($worker->last_seen_at) {
+            return $worker->last_seen_at instanceof \Carbon\Carbon
+                ? $worker->last_seen_at->toISOString()
+                : $worker->last_seen_at;
+        }
+
+        return null;
     }
 
     private function shortName(string $fullName): string
@@ -204,16 +350,28 @@ class ExpertController extends Controller
         return $parts[0] . ' ' . mb_substr($parts[1], 0, 1) . '.';
     }
 
+    private function maskPhone(string $phone): string
+    {
+        $len = mb_strlen($phone);
+        if ($len <= 4) return str_repeat('*', $len);
+        return mb_substr($phone, 0, 2) . str_repeat('*', $len - 4) . mb_substr($phone, -2);
+    }
+
     private function generateMicrocopy(Worker $w): string
     {
-        $name = $w->user->nickname ?? explode(' ', $w->user->name)[0];
-        $cat = $w->category?->display_name ?? 'servicios';
+        try {
+            $name = $w->user?->nickname ?? (isset($w->user?->name) ? explode(' ', $w->user->name)[0] : 'Alguien');
+            $cat = $w->category?->display_name ?? 'servicios';
+            $status = $w->availability_status ?? 'inactive';
 
-        return match ($w->availability_status) {
-            'active' => "{$name} está disponible ahora para {$cat}",
-            'intermediate' => "{$name} anda cerca, quizás te hace la vuelta",
-            'inactive' => "{$name} no está de turno, pero trabaja en {$cat}",
-            default => '',
-        };
+            return match ($status) {
+                'active' => "{$name} está disponible ahora para {$cat}",
+                'intermediate' => "{$name} anda cerca, quizás te hace la vuelta",
+                'inactive' => "{$name} no está de turno, pero trabaja en {$cat}",
+                default => '',
+            };
+        } catch (\Exception $e) {
+            return '';
+        }
     }
 }

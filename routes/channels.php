@@ -21,7 +21,8 @@ Broadcast::channel('user.{userId}', function ($user, $userId) {
 Broadcast::channel('chat.{serviceRequestId}', function ($user, $serviceRequestId) {
     $sr = \App\Models\ServiceRequest::find($serviceRequestId);
     if (!$sr) return false;
-    return $user->id === $sr->client_id || $user->id === $sr->worker->user_id;
+    if ($user->id === $sr->client_id) return true;
+    return $sr->worker && $user->id === $sr->worker->user_id;
 });
 
 // Canal de tracking por solicitud (solo participantes)

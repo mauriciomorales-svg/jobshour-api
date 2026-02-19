@@ -64,6 +64,7 @@ Route::get('/jobs', [JobController::class, 'index']);
 Route::prefix('v1')->group(function () {
     Route::get('/test/workers', [TestController::class, 'testWorkers']);
     Route::get('/experts/nearby', [ExpertController::class, 'nearby'])->middleware('throttle:nearby');
+    Route::get('/experts/count', [ExpertController::class, 'count'])->middleware('throttle:nearby');
     Route::get('/experts/{expert}', [ExpertController::class, 'show']);
     Route::get('/categories', [CategoryController::class, 'index']);
 
