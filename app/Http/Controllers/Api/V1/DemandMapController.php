@@ -86,7 +86,7 @@ class DemandMapController extends Controller
                 'lat' => 'required|numeric|between:-90,90',
                 'lng' => 'required|numeric|between:-180,180',
                 'offered_price' => 'nullable|numeric|min:0',
-                'urgency' => 'nullable|in:low,medium,high',
+                'urgency' => 'nullable|in:low,medium,high,normal,urgent',
                 'ttl_minutes' => 'nullable|integer|min:5|max:120',
                 'type' => 'nullable|in:fixed_job,ride_share,express_errand',
                 'travel_role' => 'nullable|in:driver,passenger',
@@ -99,7 +99,7 @@ class DemandMapController extends Controller
                 'pickup_lng' => 'nullable|numeric|between:-180,180',
                 'delivery_lat' => 'nullable|numeric|between:-90,90',
                 'delivery_lng' => 'nullable|numeric|between:-180,180',
-                'departure_time' => 'nullable|date|after:now',
+                'departure_time' => 'nullable|date|after:-5 minutes',
                 'seats' => 'nullable|integer|min:1|max:8',
                 'destination_name' => 'nullable|string|max:255',
                 // Campos para express_errand
@@ -126,6 +126,8 @@ class DemandMapController extends Controller
                 'low' => 'normal',
                 'medium' => 'normal',
                 'high' => 'urgent',
+                'normal' => 'normal',
+                'urgent' => 'urgent',
             ];
             $dbUrgency = $urgencyMap[$validated['urgency'] ?? 'medium'] ?? 'normal';
 
@@ -595,5 +597,34 @@ class DemandMapController extends Controller
                 'message' => config('app.debug') ? $e->getMessage() : 'Error al tomar demanda. Por favor intenta nuevamente.'
             ], 500);
         }
+    }
+
+    /**
+     * Mis demandas publicadas
+     * Endpoint: GET /api/v1/demand/mine
+     */
+    public function mine(Request $request)
+    {
+        $user = $request->user();
+        $demands = ServiceRequest::where('client_id', $user->id)
+            ->whereIn('status', ['pending', 'accepted', 'in_progress', 'completed', 'cancelled'])
+            ->with(['category:id,slug,display_name,color'])
+            ->orderByDesc('created_at')
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $demands->map(fn($d) => [
+                'id' => $d->id,
+                'status' => $d->status,
+                'description' => $d->description,
+                'offered_price' => (int) $d->offered_price,
+                'urgency' => $d->urgency,
+                'category_name' => $d->category?->display_name,
+                'category_color' => $d->category?->color ?? '#f59e0b',
+                'created_at' => $d->created_at->diffForHumans(),
+            ])->values(),
+        ]);
     }
 }

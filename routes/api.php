@@ -91,7 +91,7 @@ Route::prefix('v1')->group(function () {
 
     // Demanda (Publicación Dorada) - Público
     Route::get('/demand/nearby', [DemandMapController::class, 'nearby'])->middleware('throttle:nearby');
-    Route::get('/demand/{serviceRequest}', [DemandMapController::class, 'show']);
+    Route::get('/demand/{serviceRequest}', [DemandMapController::class, 'show'])->where('serviceRequest', '[0-9]+');
 
     // Take demand - ruta pública con auth manual (bypass middleware issues)
     Route::post('/demand/{serviceRequest}/take-public', [DemandMapController::class, 'takePublic']);
@@ -163,6 +163,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
 
     // Demanda (Publicación Dorada) - Autenticado
+    Route::get('/demand/mine', [DemandMapController::class, 'mine']);
     Route::post('/demand/publish', [DemandMapController::class, 'publish'])->middleware('throttle:demand');
     Route::post('/demand/{serviceRequest}/take', [DemandMapController::class, 'take'])->middleware('throttle:demand');
 

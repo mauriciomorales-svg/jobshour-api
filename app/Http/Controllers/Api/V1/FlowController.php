@@ -105,7 +105,7 @@ class FlowController extends Controller
         try {
             $response = $this->send($flowEndpoint . '/payment/create', $orderData);
             Log::info('Flow iniciar response', [
-                'payment_id' => $payment->id,
+                'payment_id' => $paymentId,
                 'response' => $response,
                 'endpoint' => $flowEndpoint,
             ]);
@@ -139,7 +139,7 @@ class FlowController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Flow iniciar error', [
-                'payment_id' => $payment->id,
+                'payment_id' => $paymentId,
                 'error' => $e->getMessage(),
             ]);
 
