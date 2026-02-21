@@ -174,6 +174,8 @@ class SocialAuthController extends Controller
                 'availability_status' => 'intermediate',
             ]);
             \Log::info('Worker creado automáticamente para user: ' . $user->id);
+        } elseif ($user->worker->availability_status === 'inactive') {
+            $user->worker->update(['availability_status' => 'intermediate']);
         }
 
         // Generar token Sanctum
