@@ -6,6 +6,8 @@ use App\Events\NewMessage;
 use App\Http\Controllers\Controller;
 use App\Models\Message;
 use App\Models\ServiceRequest;
+use App\Models\User;
+use App\Services\FCMService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -42,8 +44,10 @@ class ChatController extends Controller
             $user = $request->user();
             $isClient = $serviceRequest->client_id === $user->id;
             $isWorker = $serviceRequest->worker && $serviceRequest->worker->user_id === $user->id;
+            // Demandas pendientes: cualquier usuario autenticado puede contactar al cliente
+            $isPendingDemand = $serviceRequest->status === 'pending';
 
-            if (!$isClient && !$isWorker) {
+            if (!$isClient && !$isWorker && !$isPendingDemand) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'No autorizado para enviar mensajes en esta solicitud'
@@ -112,7 +116,23 @@ class ChatController extends Controller
                     'message_id' => $message->id,
                     'error' => $e->getMessage(),
                 ]);
-                // Continuar aunque falle el broadcast
+            }
+
+            // Push FCM al destinatario
+            try {
+                $recipientId = $isClient ? $serviceRequest->worker?->user_id : $serviceRequest->client_id;
+                if ($recipientId && $recipientId !== $user->id) {
+                    $recipient = User::find($recipientId);
+                    if ($recipient?->fcm_token) {
+                        $displayBody = $type === 'image' ? '📷 Imagen' : (strlen($body) > 80 ? substr($body, 0, 80) . '...' : $body);
+                        (new FCMService())->sendToUser($recipient, $user->name, $displayBody, [
+                            'type' => 'chat_message',
+                            'request_id' => (string) $serviceRequest->id,
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('ChatController::send - Error en FCM push', ['error' => $e->getMessage()]);
             }
 
             return response()->json([

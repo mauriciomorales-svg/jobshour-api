@@ -1,5 +1,4 @@
 <?php
-
 return [
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
     'allowed_methods' => ['*'],
@@ -7,6 +6,9 @@ return [
         'https://jobshour.dondemorales.cl',
         'http://localhost:3000',
         'http://localhost:3002',
+        'http://localhost',
+        'capacitor://localhost',
+        'ionic://localhost',
     ],
     'allowed_origins_patterns' => ['#.*#'],
     'allowed_headers' => ['*'],

@@ -80,6 +80,16 @@ class NotificationController extends Controller
         ]);
     }
 
+    public function registerToken(Request $request)
+    {
+        $validated = $request->validate(['fcm_token' => 'required|string']);
+        $request->user()->update([
+            'fcm_token' => $validated['fcm_token'],
+            'fcm_token_updated_at' => now(),
+        ]);
+        return response()->json(['status' => 'success', 'message' => 'Token registrado']);
+    }
+
     public function preferences(Request $request)
     {
         if ($request->isMethod('post')) {

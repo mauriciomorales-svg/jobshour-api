@@ -42,11 +42,14 @@ Route::get('/login', function () {
 })->name('login');
 
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth');
+Route::post('/auth/verify-email', [AuthController::class, 'verifyEmail'])->middleware('throttle:auth');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth');
 
 // Social Auth
 Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle']);
 Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
+Route::get('/auth/google/callback/mobile', [SocialAuthController::class, 'handleGoogleCallbackMobile']);
+Route::get('/auth/mobile-token', [SocialAuthController::class, 'getMobileToken']);
 Route::get('/auth/facebook', [SocialAuthController::class, 'redirectToFacebook']);
 Route::get('/auth/facebook/callback', [SocialAuthController::class, 'handleFacebookCallback']);
 Route::post('/auth/{provider}/mobile', [SocialAuthController::class, 'mobileLogin']);
@@ -82,6 +85,9 @@ Route::prefix('v1')->group(function () {
 
     // Búsqueda inteligente (Weighted + Fuzzy)
     Route::get('/search', [SearchController::class, 'search']);
+
+    // Reseñas de workers - Público (cualquiera puede ver el historial)
+    Route::get('/workers/{worker}/reviews', [ReviewController::class, 'index']);
 
     // Demanda (Publicación Dorada) - Público
     Route::get('/demand/nearby', [DemandMapController::class, 'nearby'])->middleware('throttle:nearby');

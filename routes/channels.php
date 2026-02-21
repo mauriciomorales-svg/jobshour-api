@@ -17,12 +17,15 @@ Broadcast::channel('user.{userId}', function ($user, $userId) {
     return $user->id === (int) $userId;
 });
 
-// Canal de chat por solicitud (solo participantes)
+// Canal de chat por solicitud
 Broadcast::channel('chat.{serviceRequestId}', function ($user, $serviceRequestId) {
     $sr = \App\Models\ServiceRequest::find($serviceRequestId);
     if (!$sr) return false;
+    // Cliente o worker asignado siempre pueden
     if ($user->id === $sr->client_id) return true;
-    return $sr->worker && $user->id === $sr->worker->user_id;
+    if ($sr->worker && $user->id === $sr->worker->user_id) return true;
+    // Demandas pendientes: cualquier usuario autenticado puede contactar al cliente
+    return $sr->status === 'pending';
 });
 
 // Canal de tracking por solicitud (solo participantes)

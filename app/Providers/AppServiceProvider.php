@@ -21,9 +21,9 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // Búsqueda de workers en mapa — 30 req/min por IP
+        // Búsqueda de workers en mapa — 120 req/min por IP
         RateLimiter::for('nearby', function (Request $request) {
-            return Limit::perMinute(30)->by($request->ip());
+            return Limit::perMinute(120)->by($request->ip());
         });
 
         // Cambio de estado worker — 20 req/min por usuario

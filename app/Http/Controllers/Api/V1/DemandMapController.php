@@ -61,6 +61,8 @@ class DemandMapController extends Controller
                 'offered_price' => (int) $d->offered_price,
                 'description' => $d->description,
                 'urgency' => $d->urgency,
+                'travel_role' => $d->travel_role,
+                'payload' => $d->payload,
                 'distance_km' => round($d->distance_km, 2),
                 'created_at' => $d->created_at->diffForHumans(),
                 'expires_in_minutes' => $d->pin_expires_at ? 
@@ -75,121 +77,168 @@ class DemandMapController extends Controller
      */
     public function publish(Request $request)
     {
-        $validated = $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'description' => 'required|string|max:500',
-            'lat' => 'required|numeric|between:-90,90',
-            'lng' => 'required|numeric|between:-180,180',
-            'offered_price' => 'nullable|numeric|min:0',
-            'urgency' => 'nullable|in:low,medium,high',
-            'ttl_minutes' => 'nullable|integer|min:5|max:120',
-            'type' => 'nullable|in:fixed_job,ride_share,express_errand',
-            'category_type' => 'nullable|in:fixed,travel,errand',
-            'payload' => 'nullable|array',
-            // Campos para ride_share
-            'pickup_address' => 'nullable|string|max:255',
-            'delivery_address' => 'nullable|string|max:255',
-            'pickup_lat' => 'nullable|numeric|between:-90,90',
-            'pickup_lng' => 'nullable|numeric|between:-180,180',
-            'delivery_lat' => 'nullable|numeric|between:-90,90',
-            'delivery_lng' => 'nullable|numeric|between:-180,180',
-            'departure_time' => 'nullable|date|after:now',
-            'seats' => 'nullable|integer|min:1|max:8',
-            'destination_name' => 'nullable|string|max:255',
-            // Campos para express_errand
-            'store_name' => 'nullable|string|max:255',
-            'items_count' => 'nullable|integer|min:1',
-            'load_type' => 'nullable|in:light,medium,heavy',
-            'requires_vehicle' => 'nullable|boolean',
-            'image' => 'nullable|image|max:5120', // Max 5MB
-            // Programación y multi-worker
-            'scheduled_at' => 'nullable|date|after:now',
-            'workers_needed' => 'nullable|integer|min:1|max:20',
-            'recurrence' => 'nullable|in:once,daily,weekly,custom',
-            'recurrence_days' => 'nullable|array',
-            'recurrence_days.*' => 'integer|min:1|max:7',
-        ]);
+        try {
+            \Log::info('DemandMapController::publish - Start', ['user_id' => $request->user()?->id]);
+            
+            $validated = $request->validate([
+                'category_id' => 'required|exists:categories,id',
+                'description' => 'required|string|max:500',
+                'lat' => 'required|numeric|between:-90,90',
+                'lng' => 'required|numeric|between:-180,180',
+                'offered_price' => 'nullable|numeric|min:0',
+                'urgency' => 'nullable|in:low,medium,high',
+                'ttl_minutes' => 'nullable|integer|min:5|max:120',
+                'type' => 'nullable|in:fixed_job,ride_share,express_errand',
+                'travel_role' => 'nullable|in:driver,passenger',
+                'category_type' => 'nullable|in:fixed,travel,errand',
+                'payload' => 'nullable|array',
+                // Campos para ride_share
+                'pickup_address' => 'nullable|string|max:255',
+                'delivery_address' => 'nullable|string|max:255',
+                'pickup_lat' => 'nullable|numeric|between:-90,90',
+                'pickup_lng' => 'nullable|numeric|between:-180,180',
+                'delivery_lat' => 'nullable|numeric|between:-90,90',
+                'delivery_lng' => 'nullable|numeric|between:-180,180',
+                'departure_time' => 'nullable|date|after:now',
+                'seats' => 'nullable|integer|min:1|max:8',
+                'destination_name' => 'nullable|string|max:255',
+                // Campos para express_errand
+                'store_name' => 'nullable|string|max:255',
+                'items_count' => 'nullable|integer|min:1',
+                'load_type' => 'nullable|in:light,medium,heavy',
+                'requires_vehicle' => 'nullable|boolean',
+                'image' => 'nullable|image|max:5120', // Max 5MB
+                // Programación y multi-worker
+                'scheduled_at' => 'nullable|date|after:now',
+                'workers_needed' => 'nullable|integer|min:1|max:20',
+                'recurrence' => 'nullable|in:once,daily,weekly,custom',
+                'recurrence_days' => 'nullable|array',
+                'recurrence_days.*' => 'integer|min:1|max:7',
+            ]);
 
-        $user = $request->user();
-        $ttl = $validated['ttl_minutes'] ?? 30;
+            \Log::info('DemandMapController::publish - Validation passed', $validated);
 
-        // Handle image upload
-        $imagePath = null;
-        if ($request->hasFile('image')) {
-            $imagePath = $request->file('image')->store('demand-images', 'public');
-        }
-
-        // Construir payload según el tipo
-        $payload = [];
-        if ($validated['type'] === 'ride_share') {
-            $payload = [
-                'seats' => $validated['seats'] ?? 1,
-                'departure_time' => $validated['departure_time'] ?? null,
-                'destination_name' => $validated['destination_name'] ?? $validated['delivery_address'] ?? null,
-                'vehicle_type' => null,
+            $user = $request->user();
+            $ttl = $validated['ttl_minutes'] ?? 30;
+            
+            // Mapear urgencia del frontend a valores permitidos por DB
+            $urgencyMap = [
+                'low' => 'normal',
+                'medium' => 'normal',
+                'high' => 'urgent',
             ];
-        } elseif ($validated['type'] === 'express_errand') {
-            $payload = [
-                'store_name' => $validated['store_name'] ?? null,
-                'items_count' => $validated['items_count'] ?? null,
-                'load_type' => $validated['load_type'] ?? null,
-                'requires_vehicle' => $validated['requires_vehicle'] ?? false,
-            ];
+            $dbUrgency = $urgencyMap[$validated['urgency'] ?? 'medium'] ?? 'normal';
+
+            // Handle image upload
+            $imagePath = null;
+            if ($request->hasFile('image')) {
+                $imagePath = $request->file('image')->store('demand-images', 'public');
+                \Log::info('DemandMapController::publish - Image uploaded', ['path' => $imagePath]);
+            }
+
+            // Construir payload según el tipo
+            $payload = [];
+            if ($validated['type'] === 'ride_share') {
+                $role = $validated['travel_role'] ?? 'passenger';
+                $payload = [
+                    'travel_role' => $role,
+                    'seats' => $validated['seats'] ?? 1,
+                    'departure_time' => $validated['departure_time'] ?? null,
+                    'destination_name' => $validated['destination_name'] ?? $validated['delivery_address'] ?? null,
+                    'vehicle_type' => $validated['payload']['vehicle_type'] ?? null,
+                    // Driver extras
+                    'origin_address' => $validated['pickup_address'] ?? null,
+                    'destination_address' => $validated['delivery_address'] ?? null,
+                ];
+            } elseif ($validated['type'] === 'express_errand') {
+                $payload = [
+                    'store_name' => $validated['store_name'] ?? null,
+                    'items_count' => $validated['items_count'] ?? null,
+                    'load_type' => $validated['load_type'] ?? null,
+                    'requires_vehicle' => $validated['requires_vehicle'] ?? false,
+                ];
+            }
+            
+            // Si viene payload desde el frontend, mergearlo
+            if (!empty($validated['payload'])) {
+                $payload = array_merge($payload, $validated['payload']);
+            }
+
+            // Agregar imagen al payload si se subió
+            if ($imagePath) {
+                $payload['image'] = '/storage/' . $imagePath;
+            }
+
+            \Log::info('DemandMapController::publish - Creating ServiceRequest', [
+                'client_id' => $user->id,
+                'category_id' => $validated['category_id'],
+            ]);
+
+            $serviceRequest = ServiceRequest::create([
+                'client_id' => $user->id,
+                'category_id' => $validated['category_id'],
+                'type' => $validated['type'] ?? 'fixed_job',
+                'travel_role' => $validated['travel_role'] ?? null,
+                'category_type' => $validated['category_type'] ?? 'fixed',
+                'description' => $validated['description'],
+                'offered_price' => $validated['offered_price'] ?? 0,
+                'urgency' => $dbUrgency,
+                'status' => 'pending',
+                'pin_expires_at' => now()->addMinutes($ttl),
+                'payload' => !empty($payload) ? $payload : null,
+                'pickup_address' => $validated['pickup_address'] ?? null,
+                'delivery_address' => $validated['delivery_address'] ?? null,
+                'pickup_lat' => $validated['pickup_lat'] ?? null,
+                'pickup_lng' => $validated['pickup_lng'] ?? null,
+                'delivery_lat' => $validated['delivery_lat'] ?? null,
+                'delivery_lng' => $validated['delivery_lng'] ?? null,
+                'scheduled_at' => $validated['scheduled_at'] ?? null,
+                'workers_needed' => $validated['workers_needed'] ?? 1,
+                'recurrence' => $validated['recurrence'] ?? 'once',
+                'recurrence_days' => !empty($validated['recurrence_days']) ? json_encode($validated['recurrence_days']) : null,
+            ]);
+
+            \Log::info('DemandMapController::publish - ServiceRequest created', ['id' => $serviceRequest->id]);
+
+            // Usar lat/lng del request o pickup_lat/pickup_lng si están disponibles
+            $locationLat = $validated['pickup_lat'] ?? $validated['lat'];
+            $locationLng = $validated['pickup_lng'] ?? $validated['lng'];
+
+            DB::update(
+                "UPDATE service_requests SET client_location = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
+                [$locationLng, $locationLat, $serviceRequest->id]
+            );
+
+            $serviceRequest->refresh();
+
+            \Log::info('DemandMapController::publish - Success', ['request_id' => $serviceRequest->id]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => '🟡 Publicación Dorada creada. Visible en el mapa por ' . $ttl . ' minutos',
+                'data' => [
+                    'request_id' => $serviceRequest->id,
+                    'pin_expires_at' => $serviceRequest->pin_expires_at,
+                    'visible_until' => $serviceRequest->pin_expires_at->diffForHumans(),
+                ],
+            ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('DemandMapController::publish - Validation error', ['errors' => $e->errors()]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error de validación',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('DemandMapController::publish - Error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => config('app.debug') ? $e->getMessage() : 'Error al publicar demanda',
+            ], 500);
         }
-        
-        // Si viene payload desde el frontend, mergearlo
-        if (!empty($validated['payload'])) {
-            $payload = array_merge($payload, $validated['payload']);
-        }
-
-        // Agregar imagen al payload si se subió
-        if ($imagePath) {
-            $payload['image'] = '/storage/' . $imagePath;
-        }
-
-        $serviceRequest = ServiceRequest::create([
-            'client_id' => $user->id,
-            'category_id' => $validated['category_id'],
-            'type' => $validated['type'] ?? 'fixed_job',
-            'category_type' => $validated['category_type'] ?? 'fixed',
-            'description' => $validated['description'],
-            'offered_price' => $validated['offered_price'] ?? 0,
-            'urgency' => $validated['urgency'] ?? 'medium',
-            'status' => 'pending',
-            'pin_expires_at' => now()->addMinutes($ttl),
-            'payload' => !empty($payload) ? $payload : null,
-            'pickup_address' => $validated['pickup_address'] ?? null,
-            'delivery_address' => $validated['delivery_address'] ?? null,
-            'pickup_lat' => $validated['pickup_lat'] ?? null,
-            'pickup_lng' => $validated['pickup_lng'] ?? null,
-            'delivery_lat' => $validated['delivery_lat'] ?? null,
-            'delivery_lng' => $validated['delivery_lng'] ?? null,
-            'scheduled_at' => $validated['scheduled_at'] ?? null,
-            'workers_needed' => $validated['workers_needed'] ?? 1,
-            'recurrence' => $validated['recurrence'] ?? 'once',
-            'recurrence_days' => !empty($validated['recurrence_days']) ? $validated['recurrence_days'] : null,
-        ]);
-
-        // Usar lat/lng del request o pickup_lat/pickup_lng si están disponibles
-        $locationLat = $validated['pickup_lat'] ?? $validated['lat'];
-        $locationLng = $validated['pickup_lng'] ?? $validated['lng'];
-
-        DB::update(
-            "UPDATE service_requests SET client_location = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
-            [$locationLng, $locationLat, $serviceRequest->id]
-        );
-
-        $serviceRequest->refresh();
-
-        return response()->json([
-            'status' => 'success',
-            'message' => '🟡 Publicación Dorada creada. Visible en el mapa por ' . $ttl . ' minutos',
-            'data' => [
-                'request_id' => $serviceRequest->id,
-                'pin_expires_at' => $serviceRequest->pin_expires_at,
-                'visible_until' => $serviceRequest->pin_expires_at->diffForHumans(),
-            ],
-        ], 201);
     }
 
     /**
@@ -300,6 +349,7 @@ class DemandMapController extends Controller
                     'exact' => $useExactCoordinates, // Indicar si son coordenadas exactas
                 ],
                 'type' => $serviceRequest->type,
+                'travel_role' => $serviceRequest->travel_role,
                 'category_type' => $serviceRequest->category_type,
                 'payload' => $serviceRequest->payload,
                 'pickup_address' => $serviceRequest->pickup_address,

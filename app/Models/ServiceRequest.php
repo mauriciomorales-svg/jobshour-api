@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 class ServiceRequest extends Model
 {
     protected $fillable = [
-        'client_id', 'worker_id', 'category_id', 'category_type', 'type', 'description', 'payload',
+        'client_id', 'worker_id', 'category_id', 'category_type', 'type', 'travel_role', 'description', 'payload',
         'status', 'urgency', 'offered_price', 'final_price', 'payment_status', 'paid_at',
         'accepted_at', 'completed_at', 'expires_at', 'pin_expires_at', 'started_at', 'paused_at',
         'pause_reason', 'last_activity_at', 'last_known_lat', 'last_known_lng',

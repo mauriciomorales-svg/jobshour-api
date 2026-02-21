@@ -22,12 +22,19 @@ class AuthController extends Controller
             'category_id' => 'required|exists:categories,id',
         ]);
 
+        // Generar código de 6 dígitos
+        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $expiresAt = now()->addMinutes(30);
+
+        // Crear usuario pero NO verificado
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'phone' => $validated['phone'],
             'password' => Hash::make($validated['password']),
             'type' => $validated['type'],
+            'email_verification_code' => $code,
+            'email_verification_expires_at' => $expiresAt,
         ]);
 
         if ($validated['type'] === 'worker') {
@@ -41,18 +48,17 @@ class AuthController extends Controller
             );
         }
 
-        $token = $user->createToken('auth-token')->plainTextToken;
-
-        // Email de bienvenida
+        // Enviar email con código
         try {
-            \Illuminate\Support\Facades\Mail::to($user->email)->queue(new \App\Mail\WelcomeMail($user));
+            \Illuminate\Support\Facades\Mail::to($user->email)->send(new \App\Mail\EmailVerificationMail($user, $code));
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::warning("[Email] Welcome mail failed: " . $e->getMessage());
+            \Illuminate\Support\Facades\Log::warning("[Email] Verification mail failed: " . $e->getMessage());
         }
 
         return response()->json([
-            'user' => $user->load('worker'),
-            'token' => $token,
+            'message' => 'Código de verificación enviado',
+            'user_id' => $user->id,
+            'email' => $user->email,
         ], 201);
     }
 
@@ -118,5 +124,40 @@ class AuthController extends Controller
     {
         $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Sesión cerrada']);
+    }
+
+    public function verifyEmail(Request $request)
+    {
+        $request->validate([
+            'user_id' => 'required|integer|exists:users,id',
+            'code' => 'required|string|size:6',
+        ]);
+
+        $user = User::findOrFail($request->user_id);
+
+        // Verificar código
+        if ($user->email_verification_code !== $request->code) {
+            return response()->json(['message' => 'Código incorrecto'], 400);
+        }
+
+        // Verificar expiración
+        if (now()->gt($user->email_verification_expires_at)) {
+            return response()->json(['message' => 'Código expirado. Solicita uno nuevo.'], 400);
+        }
+
+        // Marcar como verificado
+        $user->email_verified_at = now();
+        $user->email_verification_code = null;
+        $user->email_verification_expires_at = null;
+        $user->save();
+
+        // Crear token
+        $token = $user->createToken('auth-token')->plainTextToken;
+
+        return response()->json([
+            'message' => 'Email verificado correctamente',
+            'user' => $user->load('worker'),
+            'token' => $token,
+        ]);
     }
 }

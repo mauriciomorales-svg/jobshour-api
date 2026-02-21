@@ -26,9 +26,8 @@ services:
       - DB_USERNAME=jobshour
       - DB_PASSWORD=jobshour_secret
       - REDIS_HOST=jobshour-redis
-      - BROADCAST_DRIVER=reverb
-      - REVERB_HOST=jobshour-reverb
-      - REVERB_PORT=8080
+      - QUEUE_CONNECTION=redis
+      - BROADCAST_DRIVER=pusher
 
   jobshour-db:
     image: postgis/postgis:16-3.4
@@ -68,18 +67,17 @@ services:
     depends_on:
       - jobshour-api
 
-  jobshour-reverb:
+  jobshour-queue:
     build:
       context: ./docker/php
       dockerfile: Dockerfile
-    container_name: jobshour-reverb
+    container_name: jobshour-queue
     restart: unless-stopped
     working_dir: /var/www
-    command: php artisan reverb:start --host=0.0.0.0 --port=8080
-    ports:
-      - "8085:8080"
+    command: php artisan queue:work --sleep=3 --tries=3 --timeout=60
     volumes:
       - ./:/var/www
+      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
     networks:
       - jobshour-network
     depends_on:
@@ -89,8 +87,13 @@ services:
       - APP_ENV=local
       - DB_CONNECTION=pgsql
       - DB_HOST=jobshour-db
+      - DB_PORT=5432
+      - DB_DATABASE=jobshour
+      - DB_USERNAME=jobshour
+      - DB_PASSWORD=jobshour_secret
       - REDIS_HOST=jobshour-redis
-      - BROADCAST_DRIVER=reverb
+      - QUEUE_CONNECTION=redis
+      - BROADCAST_DRIVER=pusher
 
 volumes:
   jobshour-db-data:

@@ -16,21 +16,33 @@ class SocialAuthController extends Controller
     /**
      * Redirect to provider (Google)
      */
-    public function redirectToGoogle()
+    public function redirectToGoogle(Request $request)
     {
-        return Socialite::driver('google')->stateless()->redirect();
+        $isMobile = $request->has('mobile');
+
+        if ($isMobile) {
+            $callbackUrl = 'https://jobshour.dondemorales.cl/api/auth/google/callback/mobile';
+            return Socialite::driver('google')
+                ->stateless()
+                ->redirectUrl($callbackUrl)
+                ->with(['prompt' => 'select_account'])
+                ->redirect();
+        }
+
+        return Socialite::driver('google')
+            ->stateless()
+            ->with(['prompt' => 'select_account'])
+            ->redirect();
     }
 
     /**
      * Handle Google callback
      */
-    public function handleGoogleCallback()
+    public function handleGoogleCallback(Request $request)
     {
         try {
-            \Log::info('Google callback received');
             $socialUser = Socialite::driver('google')->stateless()->user();
-            \Log::info('Google user data: ' . json_encode($socialUser));
-            return $this->handleSocialLogin($socialUser, 'google');
+            return $this->handleSocialLogin($socialUser, 'google', false);
         } catch (\Exception $e) {
             \Log::error('Google auth error: ' . $e->getMessage());
             return response()->json([
@@ -40,22 +52,44 @@ class SocialAuthController extends Controller
         }
     }
 
+    public function handleGoogleCallbackMobile(Request $request)
+    {
+        try {
+            $callbackUrl = 'https://jobshour.dondemorales.cl/api/auth/google/callback/mobile';
+            $socialUser = Socialite::driver('google')
+                ->stateless()
+                ->redirectUrl($callbackUrl)
+                ->user();
+            return $this->handleSocialLogin($socialUser, 'google', true);
+        } catch (\Exception $e) {
+            \Log::error('Google mobile auth error: ' . $e->getMessage());
+            $frontendUrl = 'https://jobshour.dondemorales.cl';
+            return redirect($frontendUrl . '/auth/callback?error=' . urlencode($e->getMessage()));
+        }
+    }
+
     /**
      * Redirect to provider (Facebook)
      */
-    public function redirectToFacebook()
+    public function redirectToFacebook(Request $request)
     {
-        return Socialite::driver('facebook')->stateless()->redirect();
+        $state = $request->has('mobile') ? 'mobile_app' : 'web_app';
+        
+        return Socialite::driver('facebook')
+            ->stateless()
+            ->with(['state' => $state])
+            ->redirect();
     }
 
     /**
      * Handle Facebook callback
      */
-    public function handleFacebookCallback()
+    public function handleFacebookCallback(Request $request)
     {
         try {
+            $isMobile = $request->get('state') === 'mobile_app';
             $socialUser = Socialite::driver('facebook')->stateless()->user();
-            return $this->handleSocialLogin($socialUser, 'facebook');
+            return $this->handleSocialLogin($socialUser, 'facebook', $isMobile);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -87,7 +121,7 @@ class SocialAuthController extends Controller
     /**
      * Common logic to handle social login/create user
      */
-    private function handleSocialLogin($socialUser, $provider)
+    private function handleSocialLogin($socialUser, $provider, $isMobile = false)
     {
         // Buscar usuario por provider_id
         $user = User::where('provider', $provider)
@@ -103,6 +137,8 @@ class SocialAuthController extends Controller
                 $user->update([
                     'provider' => $provider,
                     'provider_id' => $socialUser->getId(),
+                    'avatar' => $socialUser->getAvatar() ?? $user->avatar,
+                    'avatar_url' => $socialUser->getAvatar() ?? $user->avatar_url,
                 ]);
             }
         }
@@ -143,8 +179,35 @@ class SocialAuthController extends Controller
         // Generar token Sanctum
         $token = $user->createToken('social-login')->plainTextToken;
 
-        // Redirigir al frontend con el token
+        if ($isMobile) {
+            $userData = [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar,
+                'avatarUrl' => $user->avatar_url,
+                'type' => $user->type,
+            ];
+            // Guardar token en caché por 5 minutos para que la APK lo recupere
+            $authKey = 'mobile_auth_' . md5($token);
+            \Cache::put($authKey, ['token' => $token, 'user' => $userData], 300);
+            // Redirigir a página de éxito en el frontend - la APK detecta esto via browserFinished
+            $frontendUrl = 'https://jobshour.dondemorales.cl';
+            return redirect($frontendUrl . '/auth/mobile-success?key=' . $authKey);
+        }
+
+        // Redirigir al frontend web con el token
         $frontendUrl = config('app.frontend_url', 'https://jobshour.dondemorales.cl');
         return redirect($frontendUrl . '?token=' . $token . '&login=success&provider=' . $provider);
+    }
+
+    public function getMobileToken(\Illuminate\Http\Request $request)
+    {
+        $key = $request->get('key');
+        if (!$key) return response()->json(['error' => 'No key'], 400);
+        $data = \Cache::get($key);
+        if (!$data) return response()->json(['error' => 'Token expired or not found'], 404);
+        \Cache::forget($key);
+        return response()->json(['token' => $data['token'], 'user' => $data['user']]);
     }
 }

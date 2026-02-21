@@ -15,11 +15,13 @@ class WorkerActiveUpdated implements ShouldBroadcast
 
     public $worker;
     public $isActive;
+    public $status;
 
-    public function __construct(Worker $worker, bool $isActive)
+    public function __construct(Worker $worker, bool $isActive, string $status = 'active')
     {
         $this->worker = $worker;
         $this->isActive = $isActive;
+        $this->status = $status;
     }
 
     public function broadcastOn(): Channel
@@ -40,6 +42,7 @@ class WorkerActiveUpdated implements ShouldBroadcast
             'lat' => $this->worker->current_lat,
             'lng' => $this->worker->current_lng,
             'is_active' => $this->isActive,
+            'status' => $this->status,
             'category_id' => $this->worker->category_id,
             'nickname' => $this->worker->user->nickname ?? $this->worker->user->name,
             'avatar' => $this->worker->user->avatar,

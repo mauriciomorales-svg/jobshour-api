@@ -186,6 +186,7 @@ class DashboardController extends Controller
                 'lng' => $sr->fuzzed_longitude,
             ],
             'client' => [
+                'id' => $sr->client->id ?? null,
                 'name' => $sr->client->name ?? 'Anónimo',
                 'avatar' => $sr->client->avatar ?? null,
             ],

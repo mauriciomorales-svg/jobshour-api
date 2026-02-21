@@ -135,7 +135,7 @@ class WorkerModeController extends Controller
 
         // Broadcast al mapa de clientes (Pusher — canal público 'workers')
         try {
-            broadcast(new WorkerActiveUpdated($worker, $dbStatus === 'active'));
+            broadcast(new WorkerActiveUpdated($worker, $dbStatus === 'active', $dbStatus));
         } catch (\Throwable $e) {
             Log::warning('[Broadcast] WorkerActiveUpdated falló', ['error' => $e->getMessage()]);
         }
@@ -236,7 +236,7 @@ class WorkerModeController extends Controller
 
         // Broadcast al mapa de clientes
         try {
-            broadcast(new WorkerActiveUpdated($worker, $isActive));
+            broadcast(new WorkerActiveUpdated($worker, $isActive, $statusValue));
         } catch (\Throwable $e) {
             Log::warning('[Broadcast] WorkerActiveUpdated toggle falló', ['error' => $e->getMessage()]);
         }
