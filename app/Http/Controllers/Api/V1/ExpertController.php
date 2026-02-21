@@ -79,7 +79,7 @@ class ExpertController extends Controller
             'status' => 'success',
             'meta' => [
                 'center' => ['lat' => $lat, 'lng' => $lng],
-                'city' => 'Renaico', // GeocodingService::getCityName((float) $lat, (float) $lng),
+                'city' => \App\Services\CityDetector::detect((float) $lat, (float) $lng),
                 'radius_searched' => "{$finalRadius}km",
                 'total_found' => $workers->count(),
                 'is_fallback' => $isFallback,
@@ -129,7 +129,7 @@ class ExpertController extends Controller
                 'data' => [],
                 'meta' => [
                     'center' => ['lat' => $request->input('lat', 0), 'lng' => $request->input('lng', 0)],
-                    'city' => 'Renaico',
+                    'city' => \App\Services\CityDetector::detect((float) $request->input('lat', -37.67), (float) $request->input('lng', -72.58)),
                     'radius_searched' => '0km',
                     'total_found' => 0,
                     'is_fallback' => false,
