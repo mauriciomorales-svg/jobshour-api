@@ -89,6 +89,9 @@ Route::prefix('v1')->group(function () {
     // Reseñas de workers - Público (cualquiera puede ver el historial)
     Route::get('/workers/{worker}/reviews', [ReviewController::class, 'index']);
 
+    // Webhook Mercado Pago - Público (MP no envía auth)
+    Route::post('/payments/mp/webhook', [\App\Http\Controllers\Api\MercadoPagoController::class, 'webhook']);
+
     // Demanda (Publicación Dorada) - Público
     Route::get('/demand/nearby', [DemandMapController::class, 'nearby'])->middleware('throttle:nearby');
     Route::get('/demand/{serviceRequest}', [DemandMapController::class, 'show'])->where('serviceRequest', '[0-9]+');
@@ -150,7 +153,6 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
 
     // Reseñas (Reviews)
     Route::post('/reviews', [ReviewController::class, 'store']);
-    Route::get('/workers/{worker}/reviews', [ReviewController::class, 'index']);
     Route::post('/reviews/{review}/respond', [ReviewController::class, 'respond']);
 
     // Fotos de Entrega
@@ -167,19 +169,26 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::post('/demand/publish', [DemandMapController::class, 'publish'])->middleware('throttle:demand');
     Route::post('/demand/{serviceRequest}/take', [DemandMapController::class, 'take'])->middleware('throttle:demand');
 
-    // Pagos con Flow
+    // Pagos con Flow (mantenido, se activa con PAYMENT_GATEWAY=flow)
     Route::post('/payments/flow/init', [\App\Http\Controllers\Api\V1\FlowController::class, 'iniciar']);
+
+    // Pagos con Mercado Pago (activo por defecto con PAYMENT_GATEWAY=mercadopago)
+    Route::post('/payments/mp/create-link', [\App\Http\Controllers\Api\MercadoPagoController::class, 'createPaymentLink']);
+    Route::post('/payments/mp/process', [\App\Http\Controllers\Api\MercadoPagoController::class, 'processPayment']);
+    Route::post('/payments/mp/capture/{serviceRequestId}', [\App\Http\Controllers\Api\MercadoPagoController::class, 'capturePayment']);
     
     // Historial de Pagos
     Route::get('/payments/history', [\App\Http\Controllers\Api\PaymentController::class, 'history']);
 
     // Notificaciones
     Route::get('/notifications', [\App\Http\Controllers\Api\V1\NotificationController::class, 'index']);
-    Route::post('/notifications/{notification}/read', [\App\Http\Controllers\Api\V1\NotificationController::class, 'markAsRead']);
     Route::post('/notifications/read-all', [\App\Http\Controllers\Api\V1\NotificationController::class, 'markAllAsRead']);
-    Route::delete('/notifications/{notification}', [\App\Http\Controllers\Api\V1\NotificationController::class, 'destroy']);
     Route::get('/notifications/preferences', [\App\Http\Controllers\Api\V1\NotificationController::class, 'preferences']);
     Route::post('/notifications/preferences', [\App\Http\Controllers\Api\V1\NotificationController::class, 'preferences']);
+    Route::post('/notifications/register-token', [NotificationController::class, 'registerToken']);
+    Route::post('/notifications/unregister-token', [NotificationController::class, 'unregisterToken']);
+    Route::post('/notifications/{notification}/read', [\App\Http\Controllers\Api\V1\NotificationController::class, 'markAsRead']);
+    Route::delete('/notifications/{notification}', [\App\Http\Controllers\Api\V1\NotificationController::class, 'destroy']);
 
     // Worker Onboarding (datos mínimos: ubicación, categoría, tarifa)
     Route::post('/worker/onboarding', [OnboardingController::class, 'store']);
@@ -240,9 +249,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     
-    // Notificaciones Push
-    Route::post('/notifications/register-token', [NotificationController::class, 'registerToken']);
-    Route::post('/notifications/unregister-token', [NotificationController::class, 'unregisterToken']);
+    // Notificaciones Push (rutas movidas al grupo principal auth:sanctum arriba)
     
     // Workers
     Route::apiResource('workers', WorkerController::class)->except(['show']);
