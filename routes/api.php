@@ -91,6 +91,7 @@ Route::prefix('v1')->group(function () {
 
     // Webhook Mercado Pago - Público (MP no envía auth)
     Route::post('/payments/mp/webhook', [\App\Http\Controllers\Api\MercadoPagoController::class, 'webhook']);
+    Route::post('/store/webhook', [\App\Http\Controllers\Api\V1\StoreOrderController::class, 'webhook']);
 
     // Demanda (Publicación Dorada) - Público
     Route::get('/demand/nearby', [DemandMapController::class, 'nearby'])->middleware('throttle:nearby');
@@ -217,6 +218,12 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::delete('/worker/experiences/{experience}', [\App\Http\Controllers\Api\V1\WorkerExperienceController::class, 'destroy']);
     Route::post('/worker/bio-tarjeta', [\App\Http\Controllers\Api\V1\WorkerExperienceController::class, 'updateBioTarjeta']);
     Route::post('/worker/store-toggle', [\App\Http\Controllers\Api\V1\WorkerMediaController::class, 'toggleStore']);
+
+    // Store Orders
+    Route::post('/store/orders', [\App\Http\Controllers\Api\V1\StoreOrderController::class, 'create']);
+    Route::get('/store/orders', [\App\Http\Controllers\Api\V1\StoreOrderController::class, 'myOrders']);
+    Route::post('/store/orders/{id}/confirm', [\App\Http\Controllers\Api\V1\StoreOrderController::class, 'confirm']);
+    Route::post('/store/orders/{id}/reject', [\App\Http\Controllers\Api\V1\StoreOrderController::class, 'reject']);
     
     // Worker Card Data
     Route::get('/worker/card-data', [\App\Http\Controllers\Api\V1\WorkerCardController::class, 'getCardData']);
