@@ -155,6 +155,9 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::post('/reviews', [ReviewController::class, 'store']);
     Route::post('/reviews/{review}/respond', [ReviewController::class, 'respond']);
 
+    // Tienda (Store Orders)
+    Route::post('/store/orders', [\App\Http\Controllers\Api\V1\StoreOrderController::class, 'create']);
+
     // Fotos de Entrega
     Route::post('/requests/{serviceRequest}/delivery-photo', [ServiceRequestController::class, 'uploadDeliveryPhoto']);
 
@@ -213,6 +216,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::put('/worker/experiences/{experience}', [\App\Http\Controllers\Api\V1\WorkerExperienceController::class, 'update']);
     Route::delete('/worker/experiences/{experience}', [\App\Http\Controllers\Api\V1\WorkerExperienceController::class, 'destroy']);
     Route::post('/worker/bio-tarjeta', [\App\Http\Controllers\Api\V1\WorkerExperienceController::class, 'updateBioTarjeta']);
+    Route::post('/worker/store-toggle', [\App\Http\Controllers\Api\V1\WorkerMediaController::class, 'toggleStore']);
     
     // Worker Card Data
     Route::get('/worker/card-data', [\App\Http\Controllers\Api\V1\WorkerCardController::class, 'getCardData']);

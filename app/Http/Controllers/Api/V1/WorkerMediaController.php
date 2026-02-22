@@ -228,7 +228,35 @@ class WorkerMediaController extends Controller
                     'icon' => $cat->icon,
                     'color' => $cat->color,
                 ]),
+                'is_seller' => (bool) $worker->is_seller,
+                'store_name' => $worker->store_name,
             ],
+        ]);
+    }
+
+    public function toggleStore(Request $request)
+    {
+        $request->validate([
+            'is_seller' => 'required|boolean',
+            'store_name' => 'nullable|string|max:100',
+        ]);
+
+        $worker = Worker::where('user_id', $request->user()->id)->first();
+
+        if (!$worker) {
+            return response()->json(['status' => 'error', 'message' => 'Perfil de trabajador no encontrado'], 404);
+        }
+
+        $worker->update([
+            'is_seller'  => $request->is_seller,
+            'store_name' => $request->store_name ?? $worker->store_name,
+        ]);
+
+        return response()->json([
+            'status'     => 'success',
+            'is_seller'  => (bool) $worker->is_seller,
+            'store_name' => $worker->store_name,
+            'store_url'  => $worker->is_seller ? url("/tienda/{$worker->id}") : null,
         ]);
     }
 }
