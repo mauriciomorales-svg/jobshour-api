@@ -105,6 +105,8 @@ class ExpertController extends Controller
                         'active_route' => $w->active_route ?? null, // Incluir active_route si existe (modo viaje)
                         'microcopy' => $this->generateMicrocopy($w),
                         'has_video' => ($w->videos_count ?? 0) > 0,
+                        'is_seller' => (bool) ($w->is_seller ?? false),
+                        'store_name' => $w->store_name ?? null,
                     ];
                 } catch (\Exception $e) {
                     Log::error('Error mapping worker', [
@@ -204,6 +206,8 @@ class ExpertController extends Controller
                 'rating_count' => $expert->rating_count,
                 'total_jobs' => $expert->total_jobs_completed,
                 'is_verified' => $expert->is_verified,
+                'is_seller' => (bool) $expert->is_seller,
+                'store_name' => $expert->store_name,
                 'status' => $expert->availability_status,
                 'category' => $expert->category ? [
                     'slug' => $expert->category->slug,
