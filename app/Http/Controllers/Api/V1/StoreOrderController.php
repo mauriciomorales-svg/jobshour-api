@@ -83,19 +83,23 @@ class StoreOrderController extends Controller
             ? $mpData['init_point']
             : $mpData['sandbox_init_point'];
 
+        // Generar código de confirmación de 4 dígitos
+        $confirmationCode = str_pad(random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+
         // Crear pedido en BD con estado pending y expiración 24h
         $order = StoreOrder::create([
-            'worker_id'        => $worker->id,
-            'buyer_name'       => $validated['buyer_name'],
-            'buyer_email'      => $validated['buyer_email'],
-            'buyer_phone'      => $validated['buyer_phone'] ?? null,
-            'items'            => $validated['items'],
-            'total'            => $amount,
-            'delivery'         => $validated['delivery'] ?? false,
-            'delivery_address' => $validated['delivery_address'] ?? null,
-            'status'           => 'pending',
-            'mp_preference_id' => $mpData['id'],
-            'expires_at'       => Carbon::now()->addHours(24),
+            'worker_id'         => $worker->id,
+            'buyer_name'        => $validated['buyer_name'],
+            'buyer_email'       => $validated['buyer_email'],
+            'buyer_phone'       => $validated['buyer_phone'] ?? null,
+            'items'             => $validated['items'],
+            'total'             => $amount,
+            'delivery'          => $validated['delivery'] ?? false,
+            'delivery_address'  => $validated['delivery_address'] ?? null,
+            'status'            => 'pending',
+            'confirmation_code' => $confirmationCode,
+            'mp_preference_id'  => $mpData['id'],
+            'expires_at'        => Carbon::now()->addHours(24),
         ]);
 
         // Push FCM al worker
@@ -113,11 +117,12 @@ class StoreOrderController extends Controller
         }
 
         return response()->json([
-            'status'       => 'success',
-            'order_id'     => $order->id,
-            'payment_link' => $payLink,
-            'amount'       => $amount,
-            'expires_at'   => $order->expires_at->toIso8601String(),
+            'status'            => 'success',
+            'order_id'          => $order->id,
+            'payment_link'      => $payLink,
+            'amount'            => $amount,
+            'confirmation_code' => $confirmationCode,
+            'expires_at'        => $order->expires_at->toIso8601String(),
         ]);
     }
 
@@ -143,9 +148,11 @@ class StoreOrderController extends Controller
         return response()->json(['status' => 'success', 'data' => $orders]);
     }
 
-    // POST /api/v1/store/orders/{id}/confirm  — worker confirma
+    // POST /api/v1/store/orders/{id}/confirm  — worker confirma con código
     public function confirm(Request $request, int $id)
     {
+        $request->validate(['code' => 'required|string|size:4']);
+
         $worker = Worker::where('user_id', $request->user()->id)->first();
         $order  = StoreOrder::where('id', $id)->where('worker_id', $worker?->id)->firstOrFail();
 
@@ -155,6 +162,9 @@ class StoreOrderController extends Controller
         if ($order->expires_at < Carbon::now()) {
             $order->update(['status' => 'expired']);
             return response()->json(['status' => 'error', 'message' => 'Pedido expirado'], 422);
+        }
+        if ($order->confirmation_code !== $request->code) {
+            return response()->json(['status' => 'error', 'message' => 'Código incorrecto'], 422);
         }
 
         $order->update(['status' => 'confirmed', 'confirmed_at' => Carbon::now()]);
