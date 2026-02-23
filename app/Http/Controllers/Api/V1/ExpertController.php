@@ -90,8 +90,8 @@ class ExpertController extends Controller
                         'id' => $w->id,
                         'user_id' => $w->user_id, // IMPORTANTE: Incluir user_id para identificar al usuario actual
                         'pos' => [
-                            'lat' => ($w->lat ?? 0),
-                            'lng' => ($w->lng ?? 0),
+                            'lat' => (float) ($w->lat ?? 0),
+                            'lng' => (float) ($w->lng ?? 0),
                         ],
                         'name' => $w->user?->nickname ?? $this->shortName($w->user?->name ?? 'Anónimo'),
                         'avatar' => $w->user?->avatar,
