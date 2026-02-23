@@ -294,6 +294,7 @@ class ExpertController extends Controller
 
             // 🟢 ACTIVE: radio completo (solo modo socio)
             $activeQ = Worker::active()->with($with)->withCount('videos')->near($lat, $lng, $radiusKm)
+                ->whereHas('user')
                 ->where(function($q) {
                     $q->where('user_mode', 'socio')->orWhereNull('user_mode');
                 })
@@ -302,6 +303,7 @@ class ExpertController extends Controller
             // 🟡 INTERMEDIATE: radio medio 5km (modo escucha, solo modo socio)
             $intRadius = min($radiusKm, 5);
             $intQ = Worker::where('availability_status', 'intermediate')->with($with)->withCount('videos')->near($lat, $lng, $intRadius)
+                ->whereHas('user')
                 ->where(function($q) {
                     $q->where('user_mode', 'socio')->orWhereNull('user_mode');
                 })
