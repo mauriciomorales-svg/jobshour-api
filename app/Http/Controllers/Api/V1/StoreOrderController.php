@@ -156,8 +156,11 @@ class StoreOrderController extends Controller
         $worker = Worker::where('user_id', $request->user()->id)->first();
         $order  = StoreOrder::where('id', $id)->where('worker_id', $worker?->id)->firstOrFail();
 
-        if ($order->status !== 'pending') {
+        if (!in_array($order->status, ['pending', 'paid'])) {
             return response()->json(['status' => 'error', 'message' => 'Pedido no está pendiente'], 422);
+        }
+        if ($order->mp_status !== 'approved') {
+            return response()->json(['status' => 'error', 'message' => 'El pago aún no ha sido confirmado por Mercado Pago. Pide al comprador que complete el pago.'], 422);
         }
         if ($order->expires_at < Carbon::now()) {
             $order->update(['status' => 'expired']);
@@ -231,13 +234,15 @@ class StoreOrderController extends Controller
             ->first();
 
         if ($order) {
-            $order->update([
+            $updates = [
                 'mp_payment_id' => $paymentId,
                 'mp_status'     => $pay['status'],
-            ]);
-            if ($pay['status'] === 'approved') {
-                $order->update(['status' => 'paid']);
+            ];
+            // Marcar como pagado (listo para que el vendedor confirme con código)
+            if ($pay['status'] === 'approved' && in_array($order->status, ['pending'])) {
+                $updates['status'] = 'paid';
             }
+            $order->update($updates);
         }
 
         return response()->json(['status' => 'ok']);
