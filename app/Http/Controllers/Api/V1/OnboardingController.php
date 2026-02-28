@@ -34,7 +34,7 @@ class OnboardingController extends Controller
                         'location' => DB::raw("ST_SetSRID(ST_MakePoint({$validated['longitude']}, {$validated['latitude']}), 4326)"),
                         'skills' => $validated['skills'] ?? [],
                         'bio' => $validated['bio'] ?? null,
-                        'availability_status' => 'inactive',
+                        'availability_status' => 'intermediate',
                     ]
                 );
 
