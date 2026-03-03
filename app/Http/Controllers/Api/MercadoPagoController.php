@@ -8,6 +8,7 @@ use App\Services\FCMService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class MercadoPagoController extends Controller
 {
@@ -16,7 +17,7 @@ class MercadoPagoController extends Controller
 
     public function __construct()
     {
-        $this->accessToken = config('mercadopago.access_token');
+        $this->accessToken = config('services.mercadopago.access_token');
     }
 
     /**
@@ -36,7 +37,7 @@ class MercadoPagoController extends Controller
         }
 
         $tarifa   = $serviceRequest->agreed_price ?? $serviceRequest->worker->hourly_rate ?? 10000;
-        $amount   = round($tarifa * 1.08);
+        $amount   = round($tarifa * 1.10);
         $clientEmail = $serviceRequest->client->email ?? 'cliente@jobshours.com';
 
         $payload = [
@@ -131,7 +132,7 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'error', 'message' => 'No autorizado'], 403);
         }
 
-        $amount = round($serviceRequest->agreed_price * 1.08, 2); // +8% comisión
+        $amount = round($serviceRequest->agreed_price * 1.10, 2); // +10% comisión
 
         $payload = [
             'transaction_amount' => $amount,
@@ -189,7 +190,7 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'error', 'message' => 'No autorizado'], 403);
         }
 
-        $amount = round($serviceRequest->agreed_price * 1.08, 2);
+        $amount = round($serviceRequest->agreed_price * 1.10, 2);
 
         $payload = [
             'transaction_amount' => $amount,
@@ -315,6 +316,52 @@ class MercadoPagoController extends Controller
         } elseif ($payment['status'] === 'approved') {
             $serviceRequest->update(['status' => 'completed']);
             Log::info('[MP] Pago capturado, servicio completado', ['sr_id' => $serviceRequestId]);
+
+            // Notificar al admin por email
+            try {
+                $amount     = $payment['transaction_amount'] ?? 0;
+                $workerName = optional(optional($serviceRequest->worker)->user)->name ?? 'Worker #' . $serviceRequest->worker_id;
+                $clientName = optional($serviceRequest->client)->name ?? 'Cliente';
+                $adminEmail = config('mail.admin', env('MAIL_ADMIN', 'mauricio.morales@usach.cl'));
+
+                Mail::raw(
+                    "💰 PAGO RECIBIDO — JobsHours\n\n" .
+                    "🔔 Servicio #: {$serviceRequest->id}\n" .
+                    "👷 Worker: {$workerName}\n" .
+                    "👤 Cliente: {$clientName}\n" .
+                    "💵 Monto cobrado: $" . number_format($amount, 0, ',', '.') . " CLP\n" .
+                    "📅 Fecha: " . now()->format('d/m/Y H:i') . "\n\n" .
+                    "Recuerda transferir el monto al worker descontando la comisión de JobsHours.",
+                    function ($message) use ($adminEmail, $serviceRequest, $amount) {
+                        $message->to($adminEmail)
+                            ->subject('[JH-PAGO] Servicio #' . $serviceRequest->id . ' — $' . number_format($amount, 0, ',', '.') . ' CLP');
+                    }
+                );
+            } catch (\Throwable $e) {
+                Log::warning('[MP] Error enviando email admin', ['error' => $e->getMessage()]);
+            }
+
+            // Push notification al admin
+            try {
+                $amount     = $payment['transaction_amount'] ?? 0;
+                $workerName = optional(optional($serviceRequest->worker)->user)->name ?? 'Worker #' . $serviceRequest->worker_id;
+                $adminUser  = \App\Models\User::find(config('app.admin_user_id', 24));
+                if ($adminUser) {
+                    app(FCMService::class)->sendToUser(
+                        $adminUser,
+                        '💰 Pago recibido',
+                        "{$workerName} — $" . number_format($amount, 0, ',', '.') . " CLP — Servicio #{$serviceRequest->id}",
+                        [
+                            'type'               => 'payment_received',
+                            'service_request_id' => (string) $serviceRequest->id,
+                            'amount'             => (string) $amount,
+                            'sound'              => 'cash_register',
+                        ]
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::warning('[MP] Error enviando push admin', ['error' => $e->getMessage()]);
+            }
         } elseif (in_array($payment['status'], ['cancelled', 'rejected'])) {
             $serviceRequest->update(['status' => 'cancelled']);
             Log::info('[MP] Pago rechazado/cancelado', ['sr_id' => $serviceRequestId]);

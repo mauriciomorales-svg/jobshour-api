@@ -172,6 +172,8 @@ class SocialAuthController extends Controller
             Worker::create([
                 'user_id' => $user->id,
                 'availability_status' => 'inactive',
+                'is_seller' => true,
+                'store_name' => 'Mi Tienda',
             ]);
             \Log::info('Worker creado automáticamente para user: ' . $user->id);
         }

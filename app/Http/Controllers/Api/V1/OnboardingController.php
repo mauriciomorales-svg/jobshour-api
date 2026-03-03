@@ -35,6 +35,7 @@ class OnboardingController extends Controller
                         'skills' => $validated['skills'] ?? [],
                         'bio' => $validated['bio'] ?? null,
                         'availability_status' => 'intermediate',
+                        'is_seller' => true,
                     ]
                 );
 

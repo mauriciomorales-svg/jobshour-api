@@ -86,6 +86,7 @@ class WorkerModeController extends Controller
                 'hourly_rate' => 10000,
                 'availability_status' => $dbStatus,
                 'user_mode' => 'socio', // IMPORTANTE: Establecer como socio para aparecer en el mapa
+                'is_seller' => true,
             ]);
             
             // Si es multitasking, sincronizar todas las categorías
