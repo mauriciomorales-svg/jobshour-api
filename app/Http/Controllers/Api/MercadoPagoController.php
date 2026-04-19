@@ -8,7 +8,6 @@ use App\Services\FCMService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 class MercadoPagoController extends Controller
 {
@@ -17,7 +16,7 @@ class MercadoPagoController extends Controller
 
     public function __construct()
     {
-        $this->accessToken = config('services.mercadopago.access_token');
+        $this->accessToken = (string) (config('mercadopago.access_token') ?? '');
     }
 
     /**
@@ -37,7 +36,7 @@ class MercadoPagoController extends Controller
         }
 
         $tarifa   = $serviceRequest->agreed_price ?? $serviceRequest->worker->hourly_rate ?? 10000;
-        $amount   = round($tarifa * 1.10);
+        $amount   = round($tarifa * 1.08);
         $clientEmail = $serviceRequest->client->email ?? 'cliente@jobshours.com';
 
         $payload = [
@@ -132,7 +131,7 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'error', 'message' => 'No autorizado'], 403);
         }
 
-        $amount = round($serviceRequest->agreed_price * 1.10, 2); // +10% comisión
+        $amount = round($serviceRequest->agreed_price * 1.08, 2); // +8% comisión
 
         $payload = [
             'transaction_amount' => $amount,
@@ -190,7 +189,7 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'error', 'message' => 'No autorizado'], 403);
         }
 
-        $amount = round($serviceRequest->agreed_price * 1.10, 2);
+        $amount = round($serviceRequest->agreed_price * 1.08, 2);
 
         $payload = [
             'transaction_amount' => $amount,
@@ -271,6 +270,80 @@ class MercadoPagoController extends Controller
     }
 
     /**
+     * Checkout Pro: destacar demanda pendiente en el mapa (pago; aplica boosted_via webhook).
+     */
+    public function createDemandBoostCheckout(Request $request)
+    {
+        $validated = $request->validate([
+            'service_request_id' => 'required|integer|exists:service_requests,id',
+            'hours' => 'nullable|integer|min:1|max:336',
+        ]);
+
+        $sr = ServiceRequest::findOrFail($validated['service_request_id']);
+
+        if ($sr->client_id !== auth()->id()) {
+            return response()->json(['status' => 'error', 'message' => 'No autorizado'], 403);
+        }
+
+        if ($sr->status !== 'pending') {
+            return response()->json(['status' => 'error', 'message' => 'Solo demandas pendientes pueden destacarse'], 422);
+        }
+
+        $hours = $validated['hours'] ?? (int) config('services.boost.default_hours', 24);
+        $price = (int) config('services.boost.demand_price_clp', 4990);
+        $user = auth()->user();
+
+        $frontend = rtrim((string) config('app.frontend_url', config('app.url')), '/');
+
+        $payload = [
+            'items' => [[
+                'id' => 'boost-demand-'.$sr->id,
+                'title' => 'Destacar demanda #'.$sr->id.' en el mapa ('.$hours.'h)',
+                'quantity' => 1,
+                'unit_price' => (float) $price,
+                'currency_id' => 'CLP',
+            ]],
+            'payer' => ['email' => $user->email ?? 'cliente@jobshour.cl'],
+            'external_reference' => 'boost:'.$sr->id,
+            'notification_url' => rtrim((string) config('app.url'), '/').'/api/v1/payments/mp/webhook',
+            'metadata' => [
+                'type' => 'demand_boost',
+                'service_request_id' => $sr->id,
+                'boost_hours' => $hours,
+            ],
+            'back_urls' => [
+                'success' => $frontend.'/?boost=ok',
+                'failure' => $frontend.'/?boost=fail',
+                'pending' => $frontend.'/?boost=pending',
+            ],
+            'auto_return' => 'approved',
+            'statement_descriptor' => 'JH BOOST',
+        ];
+
+        $response = Http::withToken($this->accessToken)
+            ->post("{$this->baseUrl}/checkout/preferences", $payload);
+
+        if (! $response->successful()) {
+            Log::error('[MP] Error preferencia boost', ['body' => $response->json()]);
+
+            return response()->json(['status' => 'error', 'message' => 'No se pudo iniciar el pago'], 500);
+        }
+
+        $data = $response->json();
+        $initPoint = config('app.env') === 'production'
+            ? ($data['init_point'] ?? '')
+            : ($data['sandbox_init_point'] ?? $data['init_point'] ?? '');
+
+        return response()->json([
+            'status' => 'success',
+            'link' => $initPoint,
+            'preference_id' => $data['id'] ?? null,
+            'amount_clp' => $price,
+            'hours' => $hours,
+        ]);
+    }
+
+    /**
      * Webhook de Mercado Pago
      */
     public function webhook(Request $request)
@@ -297,14 +370,20 @@ class MercadoPagoController extends Controller
         }
 
         $payment = $response->json();
-        $serviceRequestId = $payment['external_reference'] ?? null;
 
-        if (!$serviceRequestId) {
+        $extRef = (string) ($payment['external_reference'] ?? '');
+        if (str_starts_with($extRef, 'boost:')) {
+            return $this->applyDemandBoostFromPayment($payment, $extRef);
+        }
+
+        $serviceRequestId = is_numeric($extRef) ? (int) $extRef : null;
+
+        if (! $serviceRequestId) {
             return response()->json(['status' => 'no_reference']);
         }
 
         $serviceRequest = ServiceRequest::find($serviceRequestId);
-        if (!$serviceRequest) {
+        if (! $serviceRequest) {
             return response()->json(['status' => 'not_found']);
         }
 
@@ -316,57 +395,46 @@ class MercadoPagoController extends Controller
         } elseif ($payment['status'] === 'approved') {
             $serviceRequest->update(['status' => 'completed']);
             Log::info('[MP] Pago capturado, servicio completado', ['sr_id' => $serviceRequestId]);
-
-            // Notificar al admin por email
-            try {
-                $amount     = $payment['transaction_amount'] ?? 0;
-                $workerName = optional(optional($serviceRequest->worker)->user)->name ?? 'Worker #' . $serviceRequest->worker_id;
-                $clientName = optional($serviceRequest->client)->name ?? 'Cliente';
-                $adminEmail = config('mail.admin', env('MAIL_ADMIN', 'mauricio.morales@usach.cl'));
-
-                Mail::raw(
-                    "💰 PAGO RECIBIDO — JobsHours\n\n" .
-                    "🔔 Servicio #: {$serviceRequest->id}\n" .
-                    "👷 Worker: {$workerName}\n" .
-                    "👤 Cliente: {$clientName}\n" .
-                    "💵 Monto cobrado: $" . number_format($amount, 0, ',', '.') . " CLP\n" .
-                    "📅 Fecha: " . now()->format('d/m/Y H:i') . "\n\n" .
-                    "Recuerda transferir el monto al worker descontando la comisión de JobsHours.",
-                    function ($message) use ($adminEmail, $serviceRequest, $amount) {
-                        $message->to($adminEmail)
-                            ->subject('[JH-PAGO] Servicio #' . $serviceRequest->id . ' — $' . number_format($amount, 0, ',', '.') . ' CLP');
-                    }
-                );
-            } catch (\Throwable $e) {
-                Log::warning('[MP] Error enviando email admin', ['error' => $e->getMessage()]);
-            }
-
-            // Push notification al admin
-            try {
-                $amount     = $payment['transaction_amount'] ?? 0;
-                $workerName = optional(optional($serviceRequest->worker)->user)->name ?? 'Worker #' . $serviceRequest->worker_id;
-                $adminUser  = \App\Models\User::find(config('app.admin_user_id', 24));
-                if ($adminUser) {
-                    app(FCMService::class)->sendToUser(
-                        $adminUser,
-                        '💰 Pago recibido',
-                        "{$workerName} — $" . number_format($amount, 0, ',', '.') . " CLP — Servicio #{$serviceRequest->id}",
-                        [
-                            'type'               => 'payment_received',
-                            'service_request_id' => (string) $serviceRequest->id,
-                            'amount'             => (string) $amount,
-                            'sound'              => 'cash_register',
-                        ]
-                    );
-                }
-            } catch (\Throwable $e) {
-                Log::warning('[MP] Error enviando push admin', ['error' => $e->getMessage()]);
-            }
         } elseif (in_array($payment['status'], ['cancelled', 'rejected'])) {
             $serviceRequest->update(['status' => 'cancelled']);
             Log::info('[MP] Pago rechazado/cancelado', ['sr_id' => $serviceRequestId]);
         }
 
         return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * @param  array<string,mixed>  $payment
+     */
+    private function applyDemandBoostFromPayment(array $payment, string $extRef): \Illuminate\Http\JsonResponse
+    {
+        $srId = (int) substr($extRef, strlen('boost:'));
+        if ($srId < 1) {
+            return response()->json(['status' => 'bad_boost_ref']);
+        }
+
+        $sr = ServiceRequest::find($srId);
+        if (! $sr) {
+            return response()->json(['status' => 'not_found']);
+        }
+
+        $meta = isset($payment['metadata']) && is_array($payment['metadata']) ? $payment['metadata'] : [];
+        $hours = (int) ($meta['boost_hours'] ?? config('services.boost.default_hours', 24));
+
+        if (! empty($payment['id'])) {
+            $sr->boost_mp_payment_id = (string) $payment['id'];
+        }
+
+        if (in_array($payment['status'] ?? '', ['approved', 'authorized'], true)) {
+            $base = ($sr->boosted_until && $sr->boosted_until->isFuture()) ? $sr->boosted_until : now();
+            $sr->boosted_until = $base->copy()->addHours($hours);
+            Log::info('[MP] Boost demanda aplicado', ['sr' => $srId, 'hours' => $hours]);
+        } else {
+            Log::info('[MP] Boost webhook sin aprobación aún', ['sr' => $srId, 'status' => $payment['status'] ?? null]);
+        }
+
+        $sr->save();
+
+        return response()->json(['status' => 'ok_boost']);
     }
 }

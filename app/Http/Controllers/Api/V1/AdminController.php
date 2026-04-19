@@ -6,20 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\ServiceRequest;
 use App\Models\Category;
+use App\Support\AdminGate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class AdminController extends Controller
 {
-    /**
-     * Verificar que el usuario sea admin (user_id = 21 = Mauricio Morales)
-     */
     private function assertAdmin(Request $request): void
     {
-        $user = $request->user();
-        if (!$user || !in_array($user->id, [21])) {
-            abort(403, 'No autorizado');
-        }
+        AdminGate::assert($request);
     }
 
     /**
@@ -162,6 +157,28 @@ class AdminController extends Controller
         $sr->save();
 
         return response()->json(['status' => 'success']);
+    }
+
+    /**
+     * Destacar demanda en mapa (orden por proximidad: boosted primero).
+     */
+    public function boostDemand(Request $request, int $id)
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'hours' => 'nullable|integer|min:1|max:336',
+        ]);
+
+        $hours = $validated['hours'] ?? 24;
+        $sr = ServiceRequest::findOrFail($id);
+        $sr->boosted_until = now()->addHours($hours);
+        $sr->save();
+
+        return response()->json([
+            'status' => 'success',
+            'boosted_until' => $sr->boosted_until->toIso8601String(),
+        ]);
     }
 
     /**

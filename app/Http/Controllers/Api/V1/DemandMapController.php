@@ -38,7 +38,15 @@ class DemandMapController extends Controller
             $query->whereIn('category_id', $categoryIds);
         }
 
-        $demands = $query->get();
+        $demands = $query->get()->sort(function ($a, $b) {
+            $ab = ($a->boosted_until && $a->boosted_until->isFuture()) ? 0 : 1;
+            $bb = ($b->boosted_until && $b->boosted_until->isFuture()) ? 0 : 1;
+            if ($ab !== $bb) {
+                return $ab <=> $bb;
+            }
+
+            return ($a->distance_km ?? 0) <=> ($b->distance_km ?? 0);
+        })->values();
 
         return response()->json([
             'status' => 'success',

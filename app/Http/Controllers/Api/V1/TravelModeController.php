@@ -171,12 +171,12 @@ class TravelModeController extends Controller
                     ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
                     ST_MakeLine(
                         ST_SetSRID(ST_MakePoint(
-                            (w.active_route->>'origin_lng')::float,
-                            (w.active_route->>'origin_lat')::float
+                            (w.active_route->'origin'->>'lng')::float,
+                            (w.active_route->'origin'->>'lat')::float
                         ), 4326),
                         ST_SetSRID(ST_MakePoint(
-                            (w.active_route->>'destination_lng')::float,
-                            (w.active_route->>'destination_lat')::float
+                            (w.active_route->'destination'->>'lng')::float,
+                            (w.active_route->'destination'->>'lat')::float
                         ), 4326)
                     )::geography
                 ) / 1000 as distance_to_route_km
@@ -191,12 +191,12 @@ class TravelModeController extends Controller
                     ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
                     ST_MakeLine(
                         ST_SetSRID(ST_MakePoint(
-                            (w.active_route->>'origin_lng')::float,
-                            (w.active_route->>'origin_lat')::float
+                            (w.active_route->'origin'->>'lng')::float,
+                            (w.active_route->'origin'->>'lat')::float
                         ), 4326),
                         ST_SetSRID(ST_MakePoint(
-                            (w.active_route->>'destination_lng')::float,
-                            (w.active_route->>'destination_lat')::float
+                            (w.active_route->'destination'->>'lng')::float,
+                            (w.active_route->'destination'->>'lat')::float
                         ), 4326)
                     )::geography,
                     ? * 1000
@@ -240,40 +240,39 @@ class TravelModeController extends Controller
                     ST_SetSRID(ST_MakePoint(?, ?), 4326)
                 ) as line
             )
-            SELECT 
-                sr.id,
-                sr.client_id,
-                sr.request_type,
-                sr.pickup_address,
-                sr.delivery_address,
-                sr.offered_price,
-                sr.passenger_count,
-                u.name as client_name,
-                -- Desvío del pickup a la ruta
-                ST_Distance(
-                    ST_SetSRID(ST_MakePoint(sr.pickup_lng, sr.pickup_lat), 4326)::geography,
-                    (SELECT line FROM route_line)::geography
-                ) / 1000 as pickup_detour_km,
-                -- Desvío del delivery a la ruta
-                ST_Distance(
-                    ST_SetSRID(ST_MakePoint(sr.delivery_lng, sr.delivery_lat), 4326)::geography,
-                    (SELECT line FROM route_line)::geography
-                ) / 1000 as delivery_detour_km
-            FROM service_requests sr
-            JOIN users u ON u.id = sr.client_id
-            WHERE 
-                sr.status = 'pending'
-                AND sr.request_type IN ('ride', 'delivery')
-                -- Filtro quirúrgico: máximo 2km de desvío por punto
-                AND ST_Distance(
-                    ST_SetSRID(ST_MakePoint(sr.pickup_lng, sr.pickup_lat), 4326)::geography,
-                    (SELECT line FROM route_line)::geography
-                ) < 2000
-                AND ST_Distance(
-                    ST_SetSRID(ST_MakePoint(sr.delivery_lng, sr.delivery_lat), 4326)::geography,
-                    (SELECT line FROM route_line)::geography
-                ) < 2000
-            ORDER BY (pickup_detour_km + delivery_detour_km) ASC
+            SELECT * FROM (
+                SELECT
+                    sr.id,
+                    sr.client_id,
+                    sr.request_type,
+                    sr.pickup_address,
+                    sr.delivery_address,
+                    sr.offered_price,
+                    sr.passenger_count,
+                    u.name as client_name,
+                    ST_Distance(
+                        ST_SetSRID(ST_MakePoint(sr.pickup_lng, sr.pickup_lat), 4326)::geography,
+                        (SELECT line FROM route_line)::geography
+                    ) / 1000 as pickup_detour_km,
+                    ST_Distance(
+                        ST_SetSRID(ST_MakePoint(sr.delivery_lng, sr.delivery_lat), 4326)::geography,
+                        (SELECT line FROM route_line)::geography
+                    ) / 1000 as delivery_detour_km
+                FROM service_requests sr
+                JOIN users u ON u.id = sr.client_id
+                WHERE
+                    sr.status = 'pending'
+                    AND sr.request_type IN ('ride', 'delivery')
+                    AND ST_Distance(
+                        ST_SetSRID(ST_MakePoint(sr.pickup_lng, sr.pickup_lat), 4326)::geography,
+                        (SELECT line FROM route_line)::geography
+                    ) < 2000
+                    AND ST_Distance(
+                        ST_SetSRID(ST_MakePoint(sr.delivery_lng, sr.delivery_lat), 4326)::geography,
+                        (SELECT line FROM route_line)::geography
+                    ) < 2000
+            ) matched
+            ORDER BY (matched.pickup_detour_km + matched.delivery_detour_km) ASC
         ", [$originLng, $originLat, $destLng, $destLat]);
 
         return collect($matches);

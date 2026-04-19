@@ -3,13 +3,15 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\IntegratedQuote;
 use App\Models\StoreOrder;
+use App\Models\ServiceRequest;
 use App\Models\Worker;
 use App\Services\FCMService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Carbon\Carbon;
 
 class StoreOrderController extends Controller
 {
@@ -18,10 +20,13 @@ class StoreOrderController extends Controller
 
     private function mpToken(): string
     {
-        return config('services.mercadopago.access_token', '');
+        return (string) config('services.mercadopago.access_token', '');
     }
 
-    // POST /api/v1/store/orders  — cliente crea pedido y paga (autorización diferida)
+    /**
+     * POST /api/v1/store/orders
+     * Cliente crea pedido y obtiene link de pago.
+     */
     public function create(Request $request)
     {
         $validated = $request->validate([
@@ -35,7 +40,7 @@ class StoreOrderController extends Controller
             'buyer_name'         => 'required|string|max:100',
             'buyer_email'        => 'required|email',
             'buyer_phone'        => 'nullable|string|max:20',
-            'delivery'           => 'boolean',
+            'delivery'           => 'sometimes|boolean',
             'delivery_address'   => 'nullable|string|max:255',
         ]);
 
@@ -45,9 +50,25 @@ class StoreOrderController extends Controller
         }
 
         $amount = (int) round($validated['total']);
+        $confirmationCode = str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
 
-        // Crear preferencia MP (checkout normal — captura al confirmar)
-        $mpItems = array_map(fn($i) => [
+        // 1) Crear orden local primero para usar su ID en MP external_reference y back_urls.
+        $order = StoreOrder::create([
+            'worker_id'         => $worker->id,
+            'buyer_name'        => $validated['buyer_name'],
+            'buyer_email'       => $validated['buyer_email'],
+            'buyer_phone'       => $validated['buyer_phone'] ?? null,
+            'items'             => $validated['items'],
+            'total'             => $amount,
+            'delivery'          => (bool) ($validated['delivery'] ?? false),
+            'delivery_address'  => $validated['delivery_address'] ?? null,
+            'status'            => 'pending',
+            'confirmation_code' => $confirmationCode,
+            'expires_at'        => Carbon::now()->addHours(24),
+        ]);
+
+        // 2) Crear preferencia MP.
+        $mpItems = array_map(fn ($i) => [
             'id'          => 'prod-' . $i['idproducto'],
             'title'       => $i['nombre'],
             'quantity'    => (int) $i['cantidad'],
@@ -58,16 +79,17 @@ class StoreOrderController extends Controller
         $mpPayload = [
             'items'              => $mpItems,
             'payer'              => ['email' => $validated['buyer_email']],
-            'external_reference' => 'store-' . $worker->id . '-' . time(),
+            // Usar el ID de la orden para rastrear 1:1 en webhook.
+            'external_reference' => (string) $order->id,
             'notification_url'   => config('app.url') . '/api/v1/store/webhook',
             'back_urls' => [
-                'success' => config('app.url') . '/tienda/success',
+                'success' => config('app.url') . '/tienda/success?confirmation_code=' . $confirmationCode . '&external_reference=' . $order->id,
                 'failure' => config('app.url') . '/tienda/failure',
                 'pending' => config('app.url') . '/tienda/pending',
             ],
             'auto_return'          => 'approved',
             'statement_descriptor' => 'JobsHours',
-            'metadata'             => ['worker_id' => $worker->id],
+            'metadata'             => ['worker_id' => $worker->id, 'store_order_id' => $order->id],
         ];
 
         $mpResponse = Http::withToken($this->mpToken())
@@ -78,31 +100,16 @@ class StoreOrderController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Error al generar link de pago'], 500);
         }
 
-        $mpData  = $mpResponse->json();
+        $mpData = $mpResponse->json();
         $payLink = config('app.env') === 'production'
-            ? $mpData['init_point']
-            : $mpData['sandbox_init_point'];
+            ? ($mpData['init_point'] ?? null)
+            : ($mpData['sandbox_init_point'] ?? ($mpData['init_point'] ?? null));
 
-        // Generar código de confirmación de 4 dígitos
-        $confirmationCode = str_pad(random_int(0, 9999), 4, '0', STR_PAD_LEFT);
-
-        // Crear pedido en BD con estado pending y expiración 24h
-        $order = StoreOrder::create([
-            'worker_id'         => $worker->id,
-            'buyer_name'        => $validated['buyer_name'],
-            'buyer_email'       => $validated['buyer_email'],
-            'buyer_phone'       => $validated['buyer_phone'] ?? null,
-            'items'             => $validated['items'],
-            'total'             => $amount,
-            'delivery'          => $validated['delivery'] ?? false,
-            'delivery_address'  => $validated['delivery_address'] ?? null,
-            'status'            => 'pending',
-            'confirmation_code' => $confirmationCode,
-            'mp_preference_id'  => $mpData['id'],
-            'expires_at'        => Carbon::now()->addHours(24),
+        $order->update([
+            'mp_preference_id' => $mpData['id'] ?? null,
         ]);
 
-        // Push FCM al worker
+        // Push FCM al worker (no bloqueante).
         try {
             $storeName = $worker->store_name ?? 'tu tienda';
             $itemCount = array_sum(array_column($validated['items'], 'cantidad'));
@@ -122,11 +129,14 @@ class StoreOrderController extends Controller
             'payment_link'      => $payLink,
             'amount'            => $amount,
             'confirmation_code' => $confirmationCode,
-            'expires_at'        => $order->expires_at->toIso8601String(),
+            'expires_at'        => optional($order->expires_at)->toIso8601String(),
         ]);
     }
 
-    // GET /api/v1/store/orders  — worker ve sus pedidos pendientes
+    /**
+     * GET /api/v1/store/orders
+     * Worker ve sus pedidos.
+     */
     public function myOrders(Request $request)
     {
         $worker = Worker::where('user_id', $request->user()->id)->first();
@@ -134,9 +144,9 @@ class StoreOrderController extends Controller
             return response()->json(['status' => 'error', 'message' => 'No eres worker'], 404);
         }
 
-        // Auto-expirar pedidos vencidos
         StoreOrder::where('worker_id', $worker->id)
             ->where('status', 'pending')
+            ->whereNotNull('expires_at')
             ->where('expires_at', '<', Carbon::now())
             ->update(['status' => 'expired']);
 
@@ -145,24 +155,121 @@ class StoreOrderController extends Controller
             ->limit(50)
             ->get();
 
-        return response()->json(['status' => 'success', 'data' => $orders]);
+        $data = $orders->map(function (StoreOrder $order) {
+            $quote = null;
+            $serviceRequest = null;
+
+            if ($order->integrated_quote_id) {
+                $quote = IntegratedQuote::select([
+                    'id',
+                    'status',
+                    'total_amount',
+                    'service_amount',
+                    'materials_amount',
+                    'delivery_amount',
+                    'tool_wear_amount',
+                    'service_type',
+                    'service_description',
+                ])->find($order->integrated_quote_id);
+
+                $serviceRequest = ServiceRequest::where('integrated_quote_id', $order->integrated_quote_id)
+                    ->orderByDesc('id')
+                    ->first();
+            }
+
+            return [
+                'id' => $order->id,
+                'buyer_name' => $order->buyer_name,
+                'buyer_email' => $order->buyer_email,
+                'buyer_phone' => $order->buyer_phone,
+                'items' => $order->items,
+                'total' => $order->total,
+                'delivery' => $order->delivery,
+                'delivery_address' => $order->delivery_address,
+                'status' => $order->status,
+                'mp_status' => $order->mp_status,
+                'expires_at' => $order->expires_at,
+                'confirmed_at' => $order->confirmed_at,
+                'rejected_at' => $order->rejected_at,
+                'reject_reason' => $order->reject_reason,
+                'created_at' => $order->created_at,
+                'integrated_quote_id' => $order->integrated_quote_id,
+                'integrated_quote' => $quote,
+                'service_request' => $serviceRequest ? [
+                    'id' => $serviceRequest->id,
+                    'status' => $serviceRequest->status,
+                    'offered_price' => $serviceRequest->offered_price,
+                    'completed_at' => $serviceRequest->completed_at,
+                ] : null,
+            ];
+        });
+
+        return response()->json(['status' => 'success', 'data' => $data]);
     }
 
-    // POST /api/v1/store/orders/{id}/confirm  — worker confirma con código
+    /**
+     * GET /api/v1/store/orders/{id}
+     * Estado público para que el cliente vea la timeline.
+     */
+    public function showPublic(int $id)
+    {
+        $order = StoreOrder::where('id', $id)->first();
+        if (!$order) {
+            return response()->json(['status' => 'error', 'message' => 'Pedido no encontrado'], 404);
+        }
+
+        $quote = null;
+        $serviceRequest = null;
+        if ($order->integrated_quote_id) {
+            $quote = IntegratedQuote::with('items')->find($order->integrated_quote_id);
+            $serviceRequest = ServiceRequest::where('integrated_quote_id', $order->integrated_quote_id)
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'order' => [
+                    'id' => $order->id,
+                    'status' => $order->status,
+                    'mp_status' => $order->mp_status,
+                    'total' => $order->total,
+                    'delivery' => $order->delivery,
+                    'delivery_address' => $order->delivery_address,
+                    'items' => $order->items,
+                    'integrated_quote_id' => $order->integrated_quote_id,
+                    'confirmed_at' => $order->confirmed_at,
+                    'created_at' => $order->created_at,
+                ],
+                'integrated_quote' => $quote,
+                'service_request' => $serviceRequest ? [
+                    'id' => $serviceRequest->id,
+                    'status' => $serviceRequest->status,
+                    'offered_price' => $serviceRequest->offered_price,
+                    'completed_at' => $serviceRequest->completed_at,
+                ] : null,
+            ],
+        ]);
+    }
+
+    /**
+     * POST /api/v1/store/orders/{id}/confirm
+     * Comprador confirma recepción con código (público).
+     */
     public function confirm(Request $request, int $id)
     {
         $request->validate(['code' => 'required|string|size:4']);
 
-        $worker = Worker::where('user_id', $request->user()->id)->first();
-        $order  = StoreOrder::where('id', $id)->where('worker_id', $worker?->id)->firstOrFail();
+        $order = StoreOrder::findOrFail($id);
 
-        if (!in_array($order->status, ['pending', 'paid'])) {
-            return response()->json(['status' => 'error', 'message' => 'Pedido no está pendiente'], 422);
+        if (!in_array($order->status, ['pending', 'paid'], true)) {
+            return response()->json(['status' => 'error', 'message' => 'Pedido no está pendiente de confirmación'], 422);
         }
         if ($order->mp_status !== 'approved') {
-            return response()->json(['status' => 'error', 'message' => 'El pago aún no ha sido confirmado por Mercado Pago. Pide al comprador que complete el pago.'], 422);
+            return response()->json(['status' => 'error', 'message' => 'El pago aún no ha sido confirmado por Mercado Pago'], 422);
         }
-        if ($order->expires_at < Carbon::now()) {
+        if ($order->expires_at && $order->expires_at < Carbon::now()) {
             $order->update(['status' => 'expired']);
             return response()->json(['status' => 'error', 'message' => 'Pedido expirado'], 422);
         }
@@ -172,8 +279,27 @@ class StoreOrderController extends Controller
 
         $order->update(['status' => 'confirmed', 'confirmed_at' => Carbon::now()]);
 
-        // Descontar stock en inventario-api
-        foreach ($order->items as $item) {
+        // Si es parte de una cotización integrada, marcar materiales confirmados.
+        if ($order->integrated_quote_id) {
+            $quote = IntegratedQuote::find($order->integrated_quote_id);
+            if ($quote) {
+                // Si no hay servicio asociado, al confirmar el PIN se puede cerrar completo.
+                $hasService = (int) ($quote->service_amount ?? 0) > 0 || !empty($quote->service_type) || !empty($quote->service_description);
+                if (!$hasService) {
+                    $quote->update(['status' => 'closed']);
+                } else {
+                    // No "rebote": si el servicio ya estaba completado, cerrar; si no, confirmar materiales.
+                    if ($quote->status === 'service_completed') {
+                        $quote->update(['status' => 'closed']);
+                    } elseif ($quote->status !== 'closed') {
+                        $quote->update(['status' => 'materials_confirmed']);
+                    }
+                }
+            }
+        }
+
+        // Descontar stock en inventario-api (best-effort; si falla, se puede reintentar manualmente).
+        foreach (($order->items ?? []) as $item) {
             try {
                 Http::post("{$this->inventarioApi}/ventas", [
                     'idproducto' => $item['idproducto'],
@@ -188,13 +314,16 @@ class StoreOrderController extends Controller
         return response()->json(['status' => 'success', 'message' => 'Pedido confirmado', 'order' => $order]);
     }
 
-    // POST /api/v1/store/orders/{id}/reject  — worker rechaza
+    /**
+     * POST /api/v1/store/orders/{id}/reject
+     * Worker rechaza.
+     */
     public function reject(Request $request, int $id)
     {
         $request->validate(['reason' => 'nullable|string|max:255']);
 
         $worker = Worker::where('user_id', $request->user()->id)->first();
-        $order  = StoreOrder::where('id', $id)->where('worker_id', $worker?->id)->firstOrFail();
+        $order = StoreOrder::where('id', $id)->where('worker_id', $worker?->id)->firstOrFail();
 
         if ($order->status !== 'pending') {
             return response()->json(['status' => 'error', 'message' => 'Pedido no está pendiente'], 422);
@@ -209,7 +338,10 @@ class StoreOrderController extends Controller
         return response()->json(['status' => 'success', 'message' => 'Pedido rechazado', 'order' => $order]);
     }
 
-    // POST /api/v1/store/webhook  — MP notifica pago completado
+    /**
+     * POST /api/v1/store/webhook
+     * Webhook Mercado Pago para store_orders (público).
+     */
     public function webhook(Request $request)
     {
         $type = $request->input('type') ?? $request->input('topic');
@@ -218,33 +350,52 @@ class StoreOrderController extends Controller
         }
 
         $paymentId = $request->input('data.id') ?? $request->input('id');
-        if (!$paymentId) return response()->json(['status' => 'ok']);
+        if (!$paymentId) {
+            return response()->json(['status' => 'ok']);
+        }
 
-        $payRes = Http::withToken($this->mpToken())
-            ->get("{$this->mpBase}/v1/payments/{$paymentId}");
-
-        if (!$payRes->successful()) return response()->json(['status' => 'ok']);
+        $payRes = Http::withToken($this->mpToken())->get("{$this->mpBase}/v1/payments/{$paymentId}");
+        if (!$payRes->successful()) {
+            return response()->json(['status' => 'ok']);
+        }
 
         $pay = $payRes->json();
-        $ref = $pay['external_reference'] ?? '';
+        $externalRef = $pay['external_reference'] ?? null;
 
-        // Buscar pedido por preference_id o external_reference
-        $order = StoreOrder::where('mp_preference_id', $pay['preference_id'] ?? '')
-            ->orWhere('mp_payment_id', $paymentId)
-            ->first();
+        $order = null;
+        if ($externalRef && ctype_digit((string) $externalRef)) {
+            $order = StoreOrder::where('id', (int) $externalRef)->first();
+        }
+        if (!$order) {
+            $order = StoreOrder::where('mp_preference_id', $pay['preference_id'] ?? '')
+                ->orWhere('mp_payment_id', (string) $paymentId)
+                ->first();
+        }
 
         if ($order) {
             $updates = [
-                'mp_payment_id' => $paymentId,
-                'mp_status'     => $pay['status'],
+                'mp_payment_id' => (string) $paymentId,
+                'mp_status'     => (string) ($pay['status'] ?? null),
             ];
-            // Marcar como pagado (listo para que el vendedor confirme con código)
-            if ($pay['status'] === 'approved' && in_array($order->status, ['pending'])) {
+            if (($pay['status'] ?? null) === 'approved' && $order->status === 'pending') {
                 $updates['status'] = 'paid';
             }
             $order->update($updates);
+
+            // Sincronizar cotización integrada (si existe)
+            if ($order->integrated_quote_id) {
+                $qUpdates = [
+                    'mp_payment_id' => (string) $paymentId,
+                    'mp_status' => (string) ($pay['status'] ?? null),
+                ];
+                if (($pay['status'] ?? null) === 'approved') {
+                    $qUpdates['status'] = 'paid';
+                }
+                IntegratedQuote::where('id', $order->integrated_quote_id)->update($qUpdates);
+            }
         }
 
         return response()->json(['status' => 'ok']);
     }
 }
+

@@ -7,6 +7,7 @@ use App\Events\ServiceRequestUpdated;
 use App\Events\PinDiedEvent;
 use App\Events\LocationUpdated;
 use App\Http\Controllers\Controller;
+use App\Models\IntegratedQuote;
 use App\Models\ServiceRequest;
 use App\Models\Worker;
 use App\Models\Message;
@@ -411,6 +412,19 @@ class ServiceRequestController extends Controller
                     }
                 }
             });
+
+            // Sincronizar cotización integrada (si aplica)
+            if ($serviceRequest->integrated_quote_id) {
+                $quote = IntegratedQuote::find($serviceRequest->integrated_quote_id);
+                if ($quote) {
+                    // Idempotente: si la cotización ya está cerrada, no hacemos nada.
+                    if ($quote->status !== 'closed') {
+                        // Si ya estaban los materiales confirmados, cerramos; si no, marcamos servicio completado.
+                        $next = $quote->status === 'materials_confirmed' ? 'closed' : 'service_completed';
+                        $quote->update(['status' => $next]);
+                    }
+                }
+            }
 
             // Broadcast actualización - no fallar si falla
             try {

@@ -36,6 +36,7 @@ class Worker extends Model
     protected $casts = [
         'skills' => 'array',
         'service_area' => 'array',
+        'active_route' => 'array',
         'is_verified' => 'boolean',
         'is_seller' => 'boolean',
         'hourly_rate' => 'decimal:2',

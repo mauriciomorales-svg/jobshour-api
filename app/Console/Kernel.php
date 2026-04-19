@@ -8,11 +8,7 @@ class Kernel extends ConsoleKernel
 {
     protected function schedule($schedule): void
     {
-        // Verificar trabajos inactivos cada 5 minutos
-        $schedule->command('jobs:check-inactive')
-                 ->everyFiveMinutes()
-                 ->withoutOverlapping()
-                 ->runInBackground();
+        // Tareas programadas: definidas en bootstrap/app.php ->withSchedule() (Laravel 11).
     }
 
     protected function commands(): void

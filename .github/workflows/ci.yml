@@ -2,9 +2,17 @@ name: CI — JobsHour API
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, master, develop]
   pull_request:
-    branches: [main]
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: jobs-hour-api-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -12,7 +20,7 @@ jobs:
 
     services:
       postgres:
-        image: postgis/postgis:14-3.3
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -20,10 +28,10 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d jobshour_test"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 8
 
     steps:
       - name: Checkout code
@@ -33,11 +41,11 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: pdo, pdo_pgsql, pgsql
+          extensions: mbstring, pdo, pdo_pgsql, pgsql, bcmath, ctype, fileinfo, json, tokenizer, xml
           coverage: none
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: vendor
           key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
@@ -61,7 +69,12 @@ jobs:
           DB_DATABASE: jobshour_test
           DB_USERNAME: postgres
           DB_PASSWORD: postgres
-        run: php artisan migrate --force --env=testing
+          BROADCAST_DRIVER: "null"
+          QUEUE_CONNECTION: sync
+          CACHE_DRIVER: array
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+        run: php artisan migrate --force --no-interaction --env=testing
 
       - name: Run PHPUnit tests
         env:
@@ -75,12 +88,18 @@ jobs:
           BROADCAST_DRIVER: "null"
           QUEUE_CONNECTION: sync
           CACHE_DRIVER: array
-        run: php artisan test --parallel
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+        run: php artisan test
 
   deploy:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+    if: |
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
 
     steps:
       - name: Checkout code
@@ -92,9 +111,11 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 15m
           script: |
+            set -e
             cd /var/www/jobshour-api
-            git pull origin main
+            git pull origin ${{ github.ref_name }}
             composer install --no-dev --optimize-autoloader
             php artisan migrate --force
             php artisan config:cache

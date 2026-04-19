@@ -50,7 +50,10 @@
         ],
         "post-create-project-cmd": [
             "@php artisan key:generate --ansi"
-        ]
+        ],
+        "migrate": "php artisan migrate --force",
+        "migrate:status": "php artisan migrate:status",
+        "schedule:list": "php artisan schedule:list"
     },
     "extra": {
         "laravel": {

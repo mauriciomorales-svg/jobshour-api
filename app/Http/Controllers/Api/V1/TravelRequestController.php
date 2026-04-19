@@ -143,12 +143,12 @@ class TravelRequestController extends Controller
                     u.avatar as worker_avatar,
                     ST_MakeLine(
                         ST_SetSRID(ST_MakePoint(
-                            (w.active_route->>'origin_lng')::float,
-                            (w.active_route->>'origin_lat')::float
+                            (w.active_route->'origin'->>'lng')::float,
+                            (w.active_route->'origin'->>'lat')::float
                         ), 4326),
                         ST_SetSRID(ST_MakePoint(
-                            (w.active_route->>'destination_lng')::float,
-                            (w.active_route->>'destination_lat')::float
+                            (w.active_route->'destination'->>'lng')::float,
+                            (w.active_route->'destination'->>'lat')::float
                         ), 4326)
                     ) as route_line
                 FROM workers w
@@ -295,11 +295,14 @@ class TravelRequestController extends Controller
         $worker->active_route = $route;
         $worker->save();
 
+        $serviceRequest->load('client');
+        $serviceRequest->setAppends([]);
+
         return response()->json([
             'status' => 'success',
             'message' => '✅ Solicitud aceptada. Coordina con el cliente para la recogida.',
             'data' => [
-                'request' => $serviceRequest->load('client'),
+                'request' => $serviceRequest,
                 'pickup_address' => $serviceRequest->pickup_address,
                 'delivery_address' => $serviceRequest->delivery_address,
             ],

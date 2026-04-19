@@ -7,10 +7,24 @@ use Illuminate\Database\Eloquent\Model;
 class StoreOrder extends Model
 {
     protected $fillable = [
-        'worker_id', 'buyer_name', 'buyer_email', 'buyer_phone',
-        'items', 'total', 'delivery', 'delivery_address',
-        'status', 'confirmation_code', 'mp_payment_id', 'mp_preference_id', 'mp_status',
-        'expires_at', 'confirmed_at', 'rejected_at', 'reject_reason',
+        'worker_id',
+        'buyer_name',
+        'buyer_email',
+        'buyer_phone',
+        'items',
+        'total',
+        'delivery',
+        'delivery_address',
+        'status',
+        'confirmation_code',
+        'mp_payment_id',
+        'mp_preference_id',
+        'mp_status',
+        'expires_at',
+        'confirmed_at',
+        'rejected_at',
+        'reject_reason',
+        'integrated_quote_id',
     ];
 
     protected $casts = [
@@ -26,3 +40,4 @@ class StoreOrder extends Model
         return $this->belongsTo(Worker::class);
     }
 }
+

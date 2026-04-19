@@ -75,47 +75,93 @@ class ExpertController extends Controller
         );
         */
 
+        $workerPoints = $workers->map(function($w) {
+            try {
+                return [
+                    'id' => $w->id,
+                    'user_id' => $w->user_id, // IMPORTANTE: Incluir user_id para identificar al usuario actual
+                    'pos' => [
+                        'lat' => ($w->lat ?? 0) + (mt_rand(-10, 10) * 0.0001), // fuzzed
+                        'lng' => ($w->lng ?? 0) + (mt_rand(-10, 10) * 0.0001), // fuzzed
+                    ],
+                    'name' => $w->user?->nickname ?? $this->shortName($w->user?->name ?? 'Anónimo'),
+                    'avatar' => $w->user?->avatar,
+                    'price' => (int) ($w->hourly_rate ?? 0),
+                    'category_color' => $w->category?->color ?? '#2563eb',
+                    'category_slug' => $w->category?->slug,
+                    'category_name' => $w->category?->display_name,
+                    'fresh_score' => (float) ($w->rating ?? 0),
+                    'status' => $w->availability_status ?? 'inactive',
+                    'user_mode' => $w->user_mode ?? null, // Incluir user_mode para debugging
+                    'active_route' => $w->active_route ?? null, // Incluir active_route si existe (modo viaje)
+                    'microcopy' => $this->generateMicrocopy($w),
+                    'has_video' => ($w->videos_count ?? 0) > 0,
+                    'is_seller' => (bool) ($w->is_seller ?? false),
+                    'store_name' => $w->store_name ?? null,
+                ];
+            } catch (\Exception $e) {
+                Log::error('Error mapping worker', [
+                    'worker_id' => $w->id ?? null,
+                    'error' => $e->getMessage(),
+                ]);
+                return null;
+            }
+        })->filter()->values();
+
+        // MVP: 1 tienda premium hardcodeada (dondemorales.cl)
+        $premiumPoints = collect();
+        try {
+            $premiumWorkerId = (int) env('PREMIUM_STORE_WORKER_ID', 2); // proxy con location de worker MVP
+            $premiumUrl = (string) env('PREMIUM_STORE_URL', 'https://dondemorales.cl');
+            $premiumName = (string) env('PREMIUM_STORE_NAME', 'DonDeMorales');
+            $premiumAvatar = env('PREMIUM_STORE_AVATAR', null);
+
+            $storeCoord = Worker::where('id', $premiumWorkerId)
+                ->selectRaw('ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng')
+                ->first();
+
+            if ($storeCoord && $storeCoord->lat && $storeCoord->lng) {
+                $distKm = $this->haversineKm((float) $lat, (float) $lng, (float) $storeCoord->lat, (float) $storeCoord->lng);
+                if ($distKm <= (float) $finalRadius) {
+                    $premiumPoints->push([
+                        'id' => 9001,
+                        'user_id' => null,
+                        'pos' => [
+                            'lat' => (float) $storeCoord->lat + (mt_rand(-10, 10) * 0.0001), // fuzzed
+                            'lng' => (float) $storeCoord->lng + (mt_rand(-10, 10) * 0.0001), // fuzzed
+                        ],
+                        'name' => $premiumName,
+                        'avatar' => $premiumAvatar,
+                        'price' => 0,
+                        'category_color' => '#a855f7',
+                        'category_slug' => null,
+                        'category_name' => 'Tienda Premium',
+                        'fresh_score' => 5,
+                        'status' => 'active',
+                        'pin_type' => 'premium_store',
+                        'microcopy' => 'Tienda Premium',
+                        'has_video' => false,
+                        'is_seller' => false,
+                        'store_name' => $premiumName,
+                        'store_plan' => 'premium',
+                        'store_url' => $premiumUrl,
+                    ]);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[ExpertController] Error premium store', ['error' => $e->getMessage()]);
+        }
+
         return response()->json([
             'status' => 'success',
             'meta' => [
                 'center' => ['lat' => $lat, 'lng' => $lng],
                 'city' => \App\Services\CityDetector::detect((float) $lat, (float) $lng),
                 'radius_searched' => "{$finalRadius}km",
-                'total_found' => $workers->count(),
+                'total_found' => $workerPoints->count() + $premiumPoints->count(),
                 'is_fallback' => $isFallback,
             ],
-            'data' => $workers->map(function($w) {
-                try {
-                    return [
-                        'id' => $w->id,
-                        'user_id' => $w->user_id, // IMPORTANTE: Incluir user_id para identificar al usuario actual
-                        'pos' => [
-                            'lat' => (float) ($w->lat ?? 0),
-                            'lng' => (float) ($w->lng ?? 0),
-                        ],
-                        'name' => $w->user?->nickname ?? $this->shortName($w->user?->name ?? 'Anónimo'),
-                        'avatar' => $w->user?->avatar,
-                        'price' => (int) ($w->hourly_rate ?? 0),
-                        'category_color' => $w->category?->color ?? '#2563eb',
-                        'category_slug' => $w->category?->slug,
-                        'category_name' => $w->category?->display_name,
-                        'fresh_score' => (float) ($w->rating ?? 0),
-                        'status' => $w->availability_status ?? 'inactive',
-                        'user_mode' => $w->user_mode ?? null, // Incluir user_mode para debugging
-                        'active_route' => $w->active_route ?? null, // Incluir active_route si existe (modo viaje)
-                        'microcopy' => $this->generateMicrocopy($w),
-                        'has_video' => ($w->videos_count ?? 0) > 0,
-                        'is_seller' => (bool) ($w->is_seller ?? false),
-                        'store_name' => $w->store_name ?? null,
-                    ];
-                } catch (\Exception $e) {
-                    Log::error('Error mapping worker', [
-                        'worker_id' => $w->id ?? null,
-                        'error' => $e->getMessage(),
-                    ]);
-                    return null;
-                }
-            })->filter()->values(),
+            'data' => $workerPoints->concat($premiumPoints)->values(),
         ]);
         } catch (\Exception $e) {
             Log::error('ExpertController::nearby error', [
@@ -192,6 +238,7 @@ class ExpertController extends Controller
             'status' => 'success',
             'data' => [
                 'id' => $expert->id,
+                'user_id' => $expert->user_id,
                 'nickname' => $expert->user->nickname,
                 'name' => $expert->isActive() ? $expert->user->name : ($expert->user->nickname ?? $this->shortName($expert->user->name)),
                 'avatar' => $expert->user->avatar,
@@ -206,8 +253,6 @@ class ExpertController extends Controller
                 'rating_count' => $expert->rating_count,
                 'total_jobs' => $expert->total_jobs_completed,
                 'is_verified' => $expert->is_verified,
-                'is_seller' => (bool) $expert->is_seller,
-                'store_name' => $expert->store_name,
                 'status' => $expert->availability_status,
                 'category' => $expert->category ? [
                     'slug' => $expert->category->slug,
@@ -239,6 +284,8 @@ class ExpertController extends Controller
                 ],
                 'microcopy' => $this->generateMicrocopy($expert),
                 'last_seen' => $this->resolveLastSeen($expert),
+                'is_seller' => (bool) ($expert->is_seller ?? false),
+                'store_name' => $expert->store_name ?? null,
             ],
         ]);
     }
@@ -294,7 +341,6 @@ class ExpertController extends Controller
 
             // 🟢 ACTIVE: radio completo (solo modo socio)
             $activeQ = Worker::active()->with($with)->withCount('videos')->near($lat, $lng, $radiusKm)
-                ->whereHas('user')
                 ->where(function($q) {
                     $q->where('user_mode', 'socio')->orWhereNull('user_mode');
                 })
@@ -303,7 +349,6 @@ class ExpertController extends Controller
             // 🟡 INTERMEDIATE: radio medio 5km (modo escucha, solo modo socio)
             $intRadius = min($radiusKm, 5);
             $intQ = Worker::where('availability_status', 'intermediate')->with($with)->withCount('videos')->near($lat, $lng, $intRadius)
-                ->whereHas('user')
                 ->where(function($q) {
                     $q->where('user_mode', 'socio')->orWhereNull('user_mode');
                 })
@@ -354,6 +399,19 @@ class ExpertController extends Controller
         $parts = explode(' ', trim($fullName));
         if (count($parts) <= 1) return $fullName;
         return $parts[0] . ' ' . mb_substr($parts[1], 0, 1) . '.';
+    }
+
+    /**
+     * Distancia aproximada (km) para filtrar tienda premium por radio.
+     */
+    private function haversineKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earthRadiusKm = 6371.0;
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        $a = sin($dLat / 2) * sin($dLat / 2) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) * sin($dLng / 2);
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        return $earthRadiusKm * $c;
     }
 
     private function maskPhone(string $phone): string

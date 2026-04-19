@@ -36,7 +36,13 @@ class AuthTest extends TestCase
         ]);
 
         $response->assertStatus(201)
-            ->assertJsonStructure(['token', 'user']);
+            ->assertJsonStructure(['message', 'user_id', 'email']);
+
+        $this->assertDatabaseHas('users', ['email' => 'test@jobshour.cl']);
+        $created = User::where('email', 'test@jobshour.cl')->first();
+        $this->assertNotNull($created);
+        $this->assertSame($created->id, $response->json('user_id'));
+        $this->assertNotNull($created->email_verification_code);
     }
 
     public function test_me_sin_token_retorna_401(): void
