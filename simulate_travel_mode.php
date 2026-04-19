@@ -33,6 +33,8 @@ $marco = User::find($testData['marco_user_id']);
 $marcoWorker = Worker::find($testData['marco_worker_id']);
 $maria = User::find($testData['maria_user_id']);
 $pedro = User::find($testData['pedro_user_id']);
+$mariaWorker = Worker::find($testData['maria_worker_id']);
+$pedroWorker = Worker::find($testData['pedro_worker_id']);
 
 echo "👥 USUARIOS CARGADOS:\n";
 echo "   🚗 Marco (Worker ID: {$marcoWorker->id})\n";
@@ -87,7 +89,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 $mariaRequest = ServiceRequest::create([
     'client_id' => $maria->id,
-    'worker_id' => $marcoWorker->id, // Temporal
+    'worker_id' => $mariaWorker->id,
     'request_type' => 'ride',
     'pickup_address' => 'Mi casa (cerca de Ruta 180)',
     'delivery_address' => 'Angol Centro',
@@ -183,7 +185,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 $pedroRequest = ServiceRequest::create([
     'client_id' => $pedro->id,
-    'worker_id' => $marcoWorker->id, // Temporal
+    'worker_id' => $pedroWorker->id,
     'request_type' => 'ride',
     'pickup_address' => 'Sector rural (lejos de ruta)',
     'delivery_address' => 'Angol Centro',
@@ -267,7 +269,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 $mariaDelivery = ServiceRequest::create([
     'client_id' => $maria->id,
-    'worker_id' => $marcoWorker->id,
+    'worker_id' => $mariaWorker->id,
     'request_type' => 'delivery',
     'pickup_address' => 'Mi casa',
     'delivery_address' => 'Oficina en Angol',

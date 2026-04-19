@@ -10,7 +10,9 @@ use Illuminate\Support\Facades\DB;
 class ServiceRequest extends Model
 {
     protected $fillable = [
+        'integrated_quote_id',
         'client_id', 'worker_id', 'category_id', 'category_type', 'type', 'travel_role', 'description', 'payload',
+        'request_type', 'request_metadata', 'passenger_count',
         'status', 'urgency', 'offered_price', 'final_price', 'payment_status', 'paid_at',
         'accepted_at', 'completed_at', 'expires_at', 'pin_expires_at', 'started_at', 'paused_at',
         'pause_reason', 'last_activity_at', 'last_known_lat', 'last_known_lng',
@@ -20,6 +22,8 @@ class ServiceRequest extends Model
         'delivery_photo', 'delivery_signature',
         'cancelled_at', 'cancelled_by', 'cancellation_reason', 'penalty_amount', 'penalty_applied',
         'scheduled_at', 'workers_needed', 'workers_accepted', 'recurrence', 'recurrence_days',
+        'boosted_until',
+        'boost_mp_payment_id',
     ];
 
     protected $casts = [
@@ -47,10 +51,12 @@ class ServiceRequest extends Model
         'penalty_amount' => 'decimal:2',
         'penalty_applied' => 'boolean',
         'payload' => 'array',
+        'request_metadata' => 'array',
         'scheduled_at' => 'datetime',
         'workers_needed' => 'integer',
         'workers_accepted' => 'integer',
         'recurrence_days' => 'array',
+        'boosted_until' => 'datetime',
     ];
 
     protected $appends = ['fuzzed_latitude', 'fuzzed_longitude'];

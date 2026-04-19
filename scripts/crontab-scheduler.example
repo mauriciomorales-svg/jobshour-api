@@ -1,0 +1,6 @@
+# Añadir al crontab del usuario que ejecuta PHP en el servidor (ajustar la ruta al proyecto):
+#
+# * * * * * cd /ruta/a/jobshour-api && php artisan schedule:run >> /dev/null 2>&1
+#
+# Windows (Programador de tareas): cada minuto ejecutar:
+#   php.exe C:\ruta\a\jobshour-api\artisan schedule:run

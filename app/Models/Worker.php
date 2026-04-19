@@ -29,11 +29,14 @@ class Worker extends Model
         'rating',
         'rating_count',
         'is_verified',
+        'is_seller',
+        'store_name',
     ];
 
     protected $casts = [
         'skills' => 'array',
         'service_area' => 'array',
+        'active_route' => 'array',
         'is_verified' => 'boolean',
         'hourly_rate' => 'decimal:2',
         'rating' => 'decimal:1',

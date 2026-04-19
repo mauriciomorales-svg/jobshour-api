@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -48,7 +49,7 @@ class TravelModeValidationTest extends TestCase
         $this->pedro = User::find($this->testData['pedro_user_id']);
     }
 
-    /** @test */
+    #[Test]
     public function test_1_marco_activa_modo_viaje_renaico_angol()
     {
         echo "\n🧪 TEST 1: Marco activa Modo Viaje (Renaico → Angol)\n";
@@ -91,7 +92,7 @@ class TravelModeValidationTest extends TestCase
         $this->assertEquals(3, $data['active_route']['available_seats']);
     }
 
-    /** @test */
+    #[Test]
     public function test_2_maria_solicita_viaje_debe_matchear()
     {
         echo "\n🧪 TEST 2: María solicita viaje (CERCA - debe matchear)\n";
@@ -134,21 +135,21 @@ class TravelModeValidationTest extends TestCase
 
         if ($data['matches_found'] > 0) {
             $match = $data['matches'][0];
-            echo "   👤 Worker: {$match->worker_name}\n";
-            echo "   📏 Desvío pickup: " . number_format($match->pickup_detour_km, 1) . "km\n";
-            echo "   📏 Desvío delivery: " . number_format($match->delivery_detour_km, 1) . "km\n";
-            echo "   📏 Desvío total: " . number_format($match->total_detour_km, 1) . "km\n";
-            
-            $this->assertLessThan(2.0, $match->pickup_detour_km,
+            echo '   👤 Worker: '.($match['worker_name'] ?? '')."\n";
+            echo '   📏 Desvío pickup: '.number_format((float) ($match['pickup_detour_km'] ?? 0), 1)."km\n";
+            echo '   📏 Desvío delivery: '.number_format((float) ($match['delivery_detour_km'] ?? 0), 1)."km\n";
+            echo '   📏 Desvío total: '.number_format((float) ($match['total_detour_km'] ?? 0), 1)."km\n";
+
+            $this->assertLessThan(2.0, (float) ($match['pickup_detour_km'] ?? 0),
                 '❌ ERROR: Desvío de pickup > 2km (filtro quirúrgico falló)');
-            $this->assertLessThan(2.0, $match->delivery_detour_km,
+            $this->assertLessThan(2.0, (float) ($match['delivery_detour_km'] ?? 0),
                 '❌ ERROR: Desvío de delivery > 2km (filtro quirúrgico falló)');
             
             echo "   ✅ MATCH CORRECTO: Desvío dentro del límite (<2km por punto)\n\n";
         }
     }
 
-    /** @test */
+    #[Test]
     public function test_3_pedro_solicita_viaje_no_debe_matchear()
     {
         echo "\n🧪 TEST 3: Pedro solicita viaje (LEJOS - NO debe matchear)\n";
@@ -193,7 +194,7 @@ class TravelModeValidationTest extends TestCase
         echo "   🎯 Sistema respetó el ADN: 'No desviar de más'\n\n";
     }
 
-    /** @test */
+    #[Test]
     public function test_4_maria_envia_sobre_delivery()
     {
         echo "\n🧪 TEST 4: María envía sobre (DELIVERY - debe matchear igual)\n";
@@ -239,13 +240,13 @@ class TravelModeValidationTest extends TestCase
 
         if ($data['matches_found'] > 0) {
             $match = $data['matches'][0];
-            echo "   👤 Worker: {$match->worker_name}\n";
-            echo "   📏 Desvío total: " . number_format($match->total_detour_km, 1) . "km\n";
+            echo '   👤 Worker: '.($match['worker_name'] ?? '')."\n";
+            echo '   📏 Desvío total: '.number_format((float) ($match['total_detour_km'] ?? 0), 1)."km\n";
             echo "   ✅ CORRECTO: Sistema trata delivery con misma prioridad que ride\n\n";
         }
     }
 
-    /** @test */
+    #[Test]
     public function test_5_marco_acepta_solicitud_de_maria()
     {
         echo "\n🧪 TEST 5: Marco acepta solicitud de María\n";
@@ -300,13 +301,13 @@ class TravelModeValidationTest extends TestCase
         echo "   ✅ Worker asignado correctamente\n\n";
     }
 
-    /** @test */
+    #[Test]
     public function test_6_performance_match_debe_ser_rapido()
     {
         echo "\n🧪 TEST 6: Performance - Match debe ser instantáneo (<1s)\n";
         
         // Marco activa ruta
-        $this->actingAs($this->marco)
+        $activateResponse = $this->actingAs($this->marco)
             ->postJson('/api/v1/worker/travel-mode/activate', [
                 'origin_lat' => $this->testData['renaico']['lat'],
                 'origin_lng' => $this->testData['renaico']['lng'],
@@ -317,6 +318,7 @@ class TravelModeValidationTest extends TestCase
                 'departure_time' => now()->addMinutes(30)->toISOString(),
                 'available_seats' => 3,
             ]);
+        $activateResponse->assertStatus(200);
 
         // Medir tiempo de match
         $startTime = microtime(true);

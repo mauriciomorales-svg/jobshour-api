@@ -29,6 +29,9 @@ use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\ReviewController;
 use App\Http\Controllers\Api\V1\AdminController;
 use App\Http\Controllers\Api\V1\OnboardingController;
+use App\Http\Controllers\Api\V1\StoreOrderController;
+use App\Http\Controllers\Api\V1\IntegratedQuoteController;
+use App\Http\Controllers\Api\V1\ProductAnalyticsController;
 
 use App\Http\Controllers\Api\WorkerProfileController;
 use App\Http\Controllers\Api\FriendsController;
@@ -92,6 +95,16 @@ Route::prefix('v1')->group(function () {
     // Webhook Mercado Pago - Público (MP no envía auth)
     Route::post('/payments/mp/webhook', [\App\Http\Controllers\Api\MercadoPagoController::class, 'webhook']);
 
+    // Tienda (Store Orders) - Público (compras sin login + webhook + confirmación comprador)
+    Route::post('/store/webhook', [StoreOrderController::class, 'webhook']);
+    Route::post('/store/orders', [StoreOrderController::class, 'create']);
+    Route::get('/store/orders/{id}', [StoreOrderController::class, 'showPublic']);
+    Route::post('/store/orders/{id}/confirm', [StoreOrderController::class, 'confirm']);
+
+    // Cotizaciones públicas (worker -> comprador)
+    Route::get('/integrated-quotes/public/{token}', [IntegratedQuoteController::class, 'showPublic']);
+    Route::post('/integrated-quotes/public/{token}/checkout', [IntegratedQuoteController::class, 'publicCheckout']);
+
     // Demanda (Publicación Dorada) - Público
     Route::get('/demand/nearby', [DemandMapController::class, 'nearby'])->middleware('throttle:nearby');
     Route::get('/demand/{serviceRequest}', [DemandMapController::class, 'show'])->where('serviceRequest', '[0-9]+');
@@ -108,6 +121,9 @@ Route::prefix('v1')->group(function () {
 
     // Health Check — para UptimeRobot / monitoreo externo
     Route::get('/health', [HealthController::class, 'check']);
+
+    // Analytics producto (Next forward o cliente) — throttle por IP
+    Route::post('/analytics/events', [ProductAnalyticsController::class, 'store'])->middleware('throttle:analytics');
 
     // P0-10: Verificación de QR dinámico (público)
     Route::get('/workers/verify/{token}', [WorkerProfileController::class, 'verifyQRToken']);
@@ -174,6 +190,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
 
     // Pagos con Mercado Pago (activo por defecto con PAYMENT_GATEWAY=mercadopago)
     Route::post('/payments/mp/create-link', [\App\Http\Controllers\Api\MercadoPagoController::class, 'createPaymentLink']);
+    Route::post('/payments/mp/demand-boost', [\App\Http\Controllers\Api\MercadoPagoController::class, 'createDemandBoostCheckout']);
     Route::post('/payments/mp/process', [\App\Http\Controllers\Api\MercadoPagoController::class, 'processPayment']);
     Route::post('/payments/mp/capture/{serviceRequestId}', [\App\Http\Controllers\Api\MercadoPagoController::class, 'capturePayment']);
     
@@ -213,6 +230,15 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::put('/worker/experiences/{experience}', [\App\Http\Controllers\Api\V1\WorkerExperienceController::class, 'update']);
     Route::delete('/worker/experiences/{experience}', [\App\Http\Controllers\Api\V1\WorkerExperienceController::class, 'destroy']);
     Route::post('/worker/bio-tarjeta', [\App\Http\Controllers\Api\V1\WorkerExperienceController::class, 'updateBioTarjeta']);
+
+    // Store Orders - worker panel
+    Route::get('/store/orders', [StoreOrderController::class, 'myOrders']);
+    Route::post('/store/orders/{id}/reject', [StoreOrderController::class, 'reject']);
+
+    // Cotización integrada (paquete servicio + materiales + delivery)
+    Route::post('/integrated-quotes/checkout', [IntegratedQuoteController::class, 'checkout']);
+    Route::post('/integrated-quotes/worker/create', [IntegratedQuoteController::class, 'createByWorker']);
+    Route::get('/integrated-quotes/worker', [IntegratedQuoteController::class, 'workerQuotes']);
     
     // Worker Card Data
     Route::get('/worker/card-data', [\App\Http\Controllers\Api\V1\WorkerCardController::class, 'getCardData']);
@@ -235,12 +261,15 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
 
     // Admin Panel
     Route::prefix('admin')->group(function () {
+        Route::get('/analytics/summary', [ProductAnalyticsController::class, 'adminSummary']);
+        Route::get('/analytics/events', [ProductAnalyticsController::class, 'adminIndex']);
         Route::get('/stats', [AdminController::class, 'stats']);
         Route::get('/users', [AdminController::class, 'users']);
         Route::get('/users/{id}', [AdminController::class, 'userDetail']);
         Route::post('/users/{id}/toggle', [AdminController::class, 'toggleUser']);
         Route::get('/demands', [AdminController::class, 'demands']);
         Route::post('/demands/{id}/cancel', [AdminController::class, 'cancelDemand']);
+        Route::post('/demands/{id}/boost', [AdminController::class, 'boostDemand']);
         Route::get('/categories', [AdminController::class, 'categories']);
     });
 });

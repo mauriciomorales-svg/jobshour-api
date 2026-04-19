@@ -51,6 +51,11 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by($request->user()?->id ?? $request->ip());
         });
 
+        // Eventos producto (retención / embudo) — 120/min por IP
+        RateLimiter::for('analytics', function (Request $request) {
+            return Limit::perMinute(120)->by($request->ip());
+        });
+
         // FCM Push Notifications
         Event::listen(ServiceRequestCreated::class, [SendPushNotifications::class, 'handleDemandCreated']);
         Event::listen(ServiceRequestUpdated::class, [SendPushNotifications::class, 'handleDemandUpdated']);

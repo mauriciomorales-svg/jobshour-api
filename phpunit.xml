@@ -22,11 +22,6 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="BROADCAST_DRIVER" value="null"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
-        <env name="DB_CONNECTION" value="pgsql"/>
-        <env name="DB_DATABASE" value="jobshour"/>
-        <env name="DB_USERNAME" value="jobshour"/>
-        <env name="DB_PASSWORD" value="jobshour_secret"/>
-        <env name="DB_HOST" value="localhost"/>
-        <env name="DB_PORT" value="5434"/>
+        <!-- DB: usar el mismo .env que el proyecto (evita puerto fijo incorrecto). Para CI, definir variables en el workflow. -->
     </php>
 </phpunit>
