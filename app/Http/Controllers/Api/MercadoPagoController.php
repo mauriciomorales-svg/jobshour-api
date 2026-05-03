@@ -68,10 +68,22 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Error al generar link de pago'], 500);
         }
 
-        $data    = $response->json();
+        $data = $response->json();
+        if (! is_array($data)) {
+            Log::error('[MP] Preferencia: respuesta no JSON', ['raw' => $response->body()]);
+
+            return response()->json(['status' => 'error', 'message' => 'Respuesta inválida de Mercado Pago'], 502);
+        }
+
         $initPoint = config('app.env') === 'production'
-            ? $data['init_point']
-            : $data['sandbox_init_point'];
+            ? ($data['init_point'] ?? '')
+            : ($data['sandbox_init_point'] ?? $data['init_point'] ?? '');
+
+        if ($initPoint === '') {
+            Log::error('[MP] Preferencia sin init_point', ['preference_id' => $data['id'] ?? null]);
+
+            return response()->json(['status' => 'error', 'message' => 'Mercado Pago no devolvió URL de pago (revisá APP_ENV vs credenciales prod/test)'], 502);
+        }
 
         $serviceRequest->update([
             'mp_preference_id' => $data['id'],
@@ -131,7 +143,18 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'error', 'message' => 'No autorizado'], 403);
         }
 
-        $amount = round($serviceRequest->agreed_price * 1.08, 2); // +8% comisión
+        if (trim($this->accessToken) === '') {
+            Log::warning('[MP] initPayment sin access_token configurado');
+
+            return response()->json(['status' => 'error', 'message' => 'Mercado Pago no está configurado en el servidor'], 503);
+        }
+
+        $base = $serviceRequest->agreed_price;
+        if ($base === null || (float) $base <= 0) {
+            return response()->json(['status' => 'error', 'message' => 'La solicitud no tiene precio acordado válido'], 422);
+        }
+
+        $amount = round((float) $base * 1.08, 2); // +8% comisión
 
         $payload = [
             'transaction_amount' => $amount,
@@ -149,12 +172,17 @@ class MercadoPagoController extends Controller
         $response = Http::withToken($this->accessToken)
             ->post("{$this->baseUrl}/v1/payments", $payload);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::error('[MP] Error creando pago', ['body' => $response->json()]);
             return response()->json(['status' => 'error', 'message' => 'Error al iniciar pago'], 500);
         }
 
         $data = $response->json();
+        if (! is_array($data) || ! isset($data['id'], $data['status'])) {
+            Log::error('[MP] initPayment: cuerpo inesperado', ['body' => $data]);
+
+            return response()->json(['status' => 'error', 'message' => 'Respuesta inválida de Mercado Pago'], 502);
+        }
 
         $serviceRequest->update([
             'mp_payment_id' => $data['id'],
@@ -179,7 +207,8 @@ class MercadoPagoController extends Controller
             'token'              => 'required|string',
             'payment_method_id'  => 'required|string',
             'installments'       => 'required|integer',
-            'issuer_id'          => 'nullable|string',
+            /** El brick puede enviar issuer_id numérico (JSON number) */
+            'issuer_id'          => 'nullable',
             'payer'              => 'required|array',
         ]);
 
@@ -189,7 +218,21 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'error', 'message' => 'No autorizado'], 403);
         }
 
-        $amount = round($serviceRequest->agreed_price * 1.08, 2);
+        if (trim($this->accessToken) === '') {
+            Log::warning('[MP] processPayment sin access_token configurado');
+
+            return response()->json(['status' => 'error', 'message' => 'Mercado Pago no está configurado en el servidor'], 503);
+        }
+
+        $base = $serviceRequest->agreed_price;
+        if ($base === null || (float) $base <= 0) {
+            return response()->json(['status' => 'error', 'message' => 'La solicitud no tiene precio acordado válido'], 422);
+        }
+
+        $amount = round((float) $base * 1.08, 2);
+
+        $issuerId = $request->input('issuer_id');
+        $issuerId = ($issuerId !== null && $issuerId !== '') ? (string) $issuerId : null;
 
         $payload = [
             'transaction_amount' => $amount,
@@ -197,7 +240,7 @@ class MercadoPagoController extends Controller
             'description'        => 'JobsHours - Servicio #' . $serviceRequest->id,
             'installments'       => $request->installments,
             'payment_method_id'  => $request->payment_method_id,
-            'issuer_id'          => $request->issuer_id,
+            'issuer_id'          => $issuerId,
             'capture'            => false,
             'external_reference' => (string) $serviceRequest->id,
             'notification_url'   => config('app.url') . '/api/v1/payments/mp/webhook',
@@ -211,15 +254,25 @@ class MercadoPagoController extends Controller
         $response = Http::withToken($this->accessToken)
             ->post("{$this->baseUrl}/v1/payments", $payload);
 
-        if (!$response->successful()) {
-            Log::error('[MP] Error procesando pago', ['body' => $response->json()]);
+        $body = $response->json();
+
+        if (! $response->successful()) {
+            Log::error('[MP] Error procesando pago', ['body' => $body, 'status' => $response->status()]);
+            $msg = is_array($body) ? ($body['message'] ?? 'Error al procesar pago') : 'Error al procesar pago';
+
             return response()->json([
                 'status'  => 'error',
-                'message' => $response->json()['message'] ?? 'Error al procesar pago',
+                'message' => $msg,
             ], 422);
         }
 
-        $data = $response->json();
+        if (! is_array($body) || ! isset($body['id'], $body['status'])) {
+            Log::error('[MP] processPayment: cuerpo inesperado', ['body' => $body]);
+
+            return response()->json(['status' => 'error', 'message' => 'Respuesta inválida de Mercado Pago'], 502);
+        }
+
+        $data = $body;
 
         $serviceRequest->update([
             'mp_payment_id' => $data['id'],
@@ -340,6 +393,19 @@ class MercadoPagoController extends Controller
             'preference_id' => $data['id'] ?? null,
             'amount_clp' => $price,
             'hours' => $hours,
+        ]);
+    }
+
+    /**
+     * Clave pública para el Payment Brick (dato no secreto; evita duplicar NEXT_PUBLIC_MP_PUBLIC_KEY en el front).
+     */
+    public function brickConfig(): \Illuminate\Http\JsonResponse
+    {
+        $pk = trim((string) (config('mercadopago.public_key') ?? ''));
+
+        return response()->json([
+            'public_key' => $pk,
+            'available' => $pk !== '',
         ]);
     }
 
