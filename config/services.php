@@ -13,6 +13,20 @@ return [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
         'redirect' => env('GOOGLE_REDIRECT_URI'),
+        /**
+         * Callback OAuth para app móvil (Custom Tab). Debe coincidir con Google Cloud Console.
+         * Por defecto jobshours.com: el VPS ya tiene nginx + TLS ahí; jobshour.dondemorales.cl suele dar 522
+         * si el registro A/AAAA en Cloudflare no apunta a este servidor o no hay cert para ese host.
+         */
+        'redirect_mobile' => env(
+            'GOOGLE_REDIRECT_MOBILE_URI',
+            'https://jobshours.com/api/auth/google/callback/mobile'
+        ),
+        /** Tras OAuth móvil el navegador debe ir a un host que responda (mismo Next en jobshours.com). */
+        'mobile_oauth_frontend' => rtrim(
+            env('OAUTH_MOBILE_FRONTEND_URL', 'https://jobshours.com'),
+            '/'
+        ),
     ],
     'facebook' => [
         'client_id' => env('FACEBOOK_CLIENT_ID'),

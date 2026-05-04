@@ -21,7 +21,7 @@ class SocialAuthController extends Controller
         $isMobile = $request->has('mobile');
 
         if ($isMobile) {
-            $callbackUrl = 'https://jobshour.dondemorales.cl/api/auth/google/callback/mobile';
+            $callbackUrl = config('services.google.redirect_mobile');
             return Socialite::driver('google')
                 ->stateless()
                 ->redirectUrl($callbackUrl)
@@ -55,7 +55,7 @@ class SocialAuthController extends Controller
     public function handleGoogleCallbackMobile(Request $request)
     {
         try {
-            $callbackUrl = 'https://jobshour.dondemorales.cl/api/auth/google/callback/mobile';
+            $callbackUrl = config('services.google.redirect_mobile');
             $socialUser = Socialite::driver('google')
                 ->stateless()
                 ->redirectUrl($callbackUrl)
@@ -63,7 +63,7 @@ class SocialAuthController extends Controller
             return $this->handleSocialLogin($socialUser, 'google', true);
         } catch (\Exception $e) {
             \Log::error('Google mobile auth error: ' . $e->getMessage());
-            $frontendUrl = 'https://jobshour.dondemorales.cl';
+            $frontendUrl = config('services.google.mobile_oauth_frontend');
             return redirect($frontendUrl . '/auth/callback?error=' . urlencode($e->getMessage()));
         }
     }
@@ -194,12 +194,12 @@ class SocialAuthController extends Controller
             $authKey = 'mobile_auth_' . md5($token);
             \Cache::put($authKey, ['token' => $token, 'user' => $userData], 300);
             // Redirigir a página de éxito en el frontend - la APK detecta esto via browserFinished
-            $frontendUrl = 'https://jobshour.dondemorales.cl';
+            $frontendUrl = config('services.google.mobile_oauth_frontend');
             return redirect($frontendUrl . '/auth/mobile-success?key=' . $authKey);
         }
 
         // Redirigir al frontend web con el token
-        $frontendUrl = config('app.frontend_url', 'https://jobshour.dondemorales.cl');
+        $frontendUrl = rtrim((string) config('app.frontend_url', config('app.url')), '/');
         return redirect($frontendUrl . '?token=' . $token . '&login=success&provider=' . $provider);
     }
 
