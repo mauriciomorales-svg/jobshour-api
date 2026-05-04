@@ -16,7 +16,9 @@ return [
     |
     */
 
-    'enabled' => env('TELESCOPE_ENABLED', true),
+    // Por defecto desactivado: si .env no carga bien (p. ej. variables_order sin "E"),
+    // env() puede quedar vacío y antes quedaba "true" y Telescope intentaba escribir en BD al terminar cada request.
+    'enabled' => filter_var(env('TELESCOPE_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
 
     /*
     |--------------------------------------------------------------------------
