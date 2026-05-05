@@ -733,6 +733,28 @@ class ServiceRequestController extends Controller
             ->limit(20)
             ->get();
 
+        // Higiene visual/UX: evitar "basura histórica" en la vista principal.
+        // Regla:
+        // - pending expiradas: ocultar siempre
+        // - completed antiguas: ocultar si tienen más de 7 días
+        // - cancelled/rejected antiguas: ocultar si tienen más de 2 días
+        $now = now();
+        $requests = $requests->filter(function (ServiceRequest $sr) use ($now) {
+            if ($sr->status === 'pending' && $sr->expires_at && $sr->expires_at->lt($now)) {
+                return false;
+            }
+
+            if ($sr->status === 'completed' && $sr->created_at && $sr->created_at->lt($now->copy()->subDays(7))) {
+                return false;
+            }
+
+            if (in_array($sr->status, ['cancelled', 'rejected'], true) && $sr->created_at && $sr->created_at->lt($now->copy()->subDays(2))) {
+                return false;
+            }
+
+            return true;
+        })->values();
+
         $requestIds = $requests->pluck('id')->filter()->values();
         $reviewedIds = \App\Models\Review::where('reviewer_id', $userId)
             ->whereIn('service_request_id', $requestIds)
@@ -743,10 +765,15 @@ class ServiceRequestController extends Controller
         $requests->transform(function (ServiceRequest $sr) use ($userId, $reviewedMap) {
             $alreadyReviewed = isset($reviewedMap[$sr->id]);
             $isClient = (int) $sr->client_id === (int) $userId;
+            $hasRealWorker = (bool) optional($sr->worker)->user_id;
+            $isNotSelfRequest = $hasRealWorker && (int) $sr->worker->user_id !== (int) $userId;
+            $paymentCompleted = $sr->payment_status === 'completed';
+            $isCompleted = $sr->status === 'completed' && !is_null($sr->completed_at);
+            $canRate = $isClient && $isCompleted && $paymentCompleted && $isNotSelfRequest && ! $alreadyReviewed;
 
             $sr->setAttribute('user_is_client', $isClient);
             $sr->setAttribute('user_has_reviewed', $alreadyReviewed);
-            $sr->setAttribute('can_rate', $isClient && $sr->status === 'completed' && ! $alreadyReviewed);
+            $sr->setAttribute('can_rate', $canRate);
 
             return $sr;
         });
