@@ -88,7 +88,7 @@ class MercadoPagoController extends Controller
         $serviceRequest->update([
             'mp_preference_id' => $data['id'],
             'mp_status'        => 'pending_payment',
-            'status'           => 'pending_payment',
+            'payment_status'   => 'pending',
         ]);
 
         $messageBody = json_encode([
@@ -187,6 +187,7 @@ class MercadoPagoController extends Controller
         $serviceRequest->update([
             'mp_payment_id' => $data['id'],
             'mp_status'     => $data['status'],
+            'payment_status'=> 'pending',
         ]);
 
         return response()->json([
@@ -285,11 +286,8 @@ class MercadoPagoController extends Controller
         $serviceRequest->update([
             'mp_payment_id' => $data['id'],
             'mp_status'     => $data['status'],
+            'payment_status'=> 'pending',
         ]);
-
-        if ($data['status'] === 'authorized') {
-            $serviceRequest->update(['status' => 'scheduled']);
-        }
 
         return response()->json([
             'status'     => 'success',
@@ -464,13 +462,16 @@ class MercadoPagoController extends Controller
         $serviceRequest->update(['mp_status' => $payment['status']]);
 
         if ($payment['status'] === 'authorized') {
-            $serviceRequest->update(['status' => 'scheduled']);
-            Log::info('[MP] Pago autorizado, servicio agendado', ['sr_id' => $serviceRequestId]);
+            $serviceRequest->update(['payment_status' => 'pending']);
+            Log::info('[MP] Pago autorizado (retención)', ['sr_id' => $serviceRequestId]);
         } elseif ($payment['status'] === 'approved') {
-            $serviceRequest->update(['status' => 'completed']);
-            Log::info('[MP] Pago capturado, servicio completado', ['sr_id' => $serviceRequestId]);
+            $serviceRequest->update([
+                'payment_status' => 'completed',
+                'paid_at' => now(),
+            ]);
+            Log::info('[MP] Pago capturado, servicio pagado', ['sr_id' => $serviceRequestId]);
         } elseif (in_array($payment['status'], ['cancelled', 'rejected'])) {
-            $serviceRequest->update(['status' => 'cancelled']);
+            $serviceRequest->update(['payment_status' => 'failed']);
             Log::info('[MP] Pago rechazado/cancelado', ['sr_id' => $serviceRequestId]);
         }
 
