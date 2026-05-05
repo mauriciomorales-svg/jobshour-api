@@ -21,7 +21,7 @@ class SocialAuthController extends Controller
         $isMobile = $request->has('mobile');
 
         if ($isMobile) {
-            $callbackUrl = config('services.google.redirect_mobile');
+            $callbackUrl = 'https://jobshour.dondemorales.cl/api/auth/google/callback/mobile';
             return Socialite::driver('google')
                 ->stateless()
                 ->redirectUrl($callbackUrl)
@@ -55,7 +55,7 @@ class SocialAuthController extends Controller
     public function handleGoogleCallbackMobile(Request $request)
     {
         try {
-            $callbackUrl = config('services.google.redirect_mobile');
+            $callbackUrl = 'https://jobshour.dondemorales.cl/api/auth/google/callback/mobile';
             $socialUser = Socialite::driver('google')
                 ->stateless()
                 ->redirectUrl($callbackUrl)
@@ -63,7 +63,7 @@ class SocialAuthController extends Controller
             return $this->handleSocialLogin($socialUser, 'google', true);
         } catch (\Exception $e) {
             \Log::error('Google mobile auth error: ' . $e->getMessage());
-            $frontendUrl = config('services.google.mobile_oauth_frontend');
+            $frontendUrl = 'https://jobshour.dondemorales.cl';
             return redirect($frontendUrl . '/auth/callback?error=' . urlencode($e->getMessage()));
         }
     }
@@ -194,7 +194,7 @@ class SocialAuthController extends Controller
             $authKey = 'mobile_auth_' . md5($token);
             \Cache::put($authKey, ['token' => $token, 'user' => $userData], 300);
             // Redirigir a página de éxito en el frontend - la APK detecta esto via browserFinished
-            $frontendUrl = config('services.google.mobile_oauth_frontend');
+            $frontendUrl = 'https://jobshour.dondemorales.cl';
             return redirect($frontendUrl . '/auth/mobile-success?key=' . $authKey);
         }
 
