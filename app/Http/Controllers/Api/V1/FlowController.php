@@ -27,6 +27,13 @@ class FlowController extends Controller
      */
     public function iniciar(Request $request)
     {
+        if ((string) env('PAYMENT_GATEWAY', 'mercadopago') !== 'flow') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Flow está pendiente y deshabilitado. Usa Mercado Pago.',
+            ], 503);
+        }
+
         $request->validate([
             'service_request_id' => 'required|exists:service_requests,id',
             'amount' => 'required|numeric|min:1',
