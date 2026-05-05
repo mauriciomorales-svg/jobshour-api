@@ -21,9 +21,10 @@ class SocialAuthController extends Controller
         $isMobile = $request->has('mobile');
 
         if ($isMobile) {
-            $callbackUrl = 'https://jobshour.dondemorales.cl/api/auth/google/callback/mobile';
+            $callbackUrl = config('services.google.redirect');
             return Socialite::driver('google')
                 ->stateless()
+                ->with(['state' => 'mobile_app'])
                 ->redirectUrl($callbackUrl)
                 ->with(['prompt' => 'select_account'])
                 ->redirect();
@@ -42,7 +43,8 @@ class SocialAuthController extends Controller
     {
         try {
             $socialUser = Socialite::driver('google')->stateless()->user();
-            return $this->handleSocialLogin($socialUser, 'google', false);
+            $isMobile = $request->get('state') === 'mobile_app';
+            return $this->handleSocialLogin($socialUser, 'google', $isMobile);
         } catch (\Exception $e) {
             \Log::error('Google auth error: ' . $e->getMessage());
             return response()->json([
@@ -55,7 +57,7 @@ class SocialAuthController extends Controller
     public function handleGoogleCallbackMobile(Request $request)
     {
         try {
-            $callbackUrl = 'https://jobshour.dondemorales.cl/api/auth/google/callback/mobile';
+            $callbackUrl = config('services.google.redirect');
             $socialUser = Socialite::driver('google')
                 ->stateless()
                 ->redirectUrl($callbackUrl)
