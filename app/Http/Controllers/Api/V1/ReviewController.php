@@ -35,6 +35,14 @@ class ReviewController extends Controller
                 ], 422);
             }
 
+            // El cliente debe tener worker asociado para evitar calificar trabajos huérfanos.
+            if (! $serviceRequest->worker_id) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Servicio inválido para calificar'
+                ], 422);
+            }
+
             // Validar que el usuario sea el cliente
             if ($serviceRequest->client_id !== $user->id) {
                 return response()->json([
@@ -81,7 +89,8 @@ class ReviewController extends Controller
                     ->get();
 
                 $avgRating = $recentReviews->avg('stars');
-                $ratingCount = $recentReviews->count();
+                // Mostrar el total histórico de reseñas, no solo las últimas 10.
+                $ratingCount = Review::where('worker_id', $serviceRequest->worker_id)->count();
 
                 $worker = Worker::find($serviceRequest->worker_id);
                 if ($worker) {
@@ -131,11 +140,12 @@ class ReviewController extends Controller
                 ->map(function($review) {
                     return [
                         'id' => $review->id,
+                        'service_request_id' => $review->service_request_id,
                         'stars' => $review->stars,
                         'comment' => $review->comment,
                         'reviewer' => [
-                            'name' => $review->reviewer->name ?? 'Anónimo',
-                            'avatar' => $review->reviewer->avatar ?? null,
+                            'name' => $review->reviewer?->name ?? 'Anónimo',
+                            'avatar' => $review->reviewer?->avatar ?? null,
                         ],
                         'created_at' => $review->created_at->diffForHumans(),
                         'response' => $review->response,
