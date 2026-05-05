@@ -733,6 +733,24 @@ class ServiceRequestController extends Controller
             ->limit(20)
             ->get();
 
+        $requestIds = $requests->pluck('id')->filter()->values();
+        $reviewedIds = \App\Models\Review::where('reviewer_id', $userId)
+            ->whereIn('service_request_id', $requestIds)
+            ->pluck('service_request_id')
+            ->all();
+        $reviewedMap = array_fill_keys($reviewedIds, true);
+
+        $requests->transform(function (ServiceRequest $sr) use ($userId, $reviewedMap) {
+            $alreadyReviewed = isset($reviewedMap[$sr->id]);
+            $isClient = (int) $sr->client_id === (int) $userId;
+
+            $sr->setAttribute('user_is_client', $isClient);
+            $sr->setAttribute('user_has_reviewed', $alreadyReviewed);
+            $sr->setAttribute('can_rate', $isClient && $sr->status === 'completed' && ! $alreadyReviewed);
+
+            return $sr;
+        });
+
         return response()->json([
             'status' => 'success',
             'data' => $requests,
