@@ -209,7 +209,7 @@ class MercadoPagoController extends Controller
             'installments'       => 'required|integer',
             /** El brick puede enviar issuer_id numérico (JSON number) */
             'issuer_id'          => 'nullable',
-            'payer'              => 'required|array',
+            'payer'              => 'nullable|array',
         ]);
 
         $serviceRequest = ServiceRequest::with('worker.user')->findOrFail($request->service_request_id);
@@ -234,6 +234,14 @@ class MercadoPagoController extends Controller
         $issuerId = $request->input('issuer_id');
         $issuerId = ($issuerId !== null && $issuerId !== '') ? (string) $issuerId : null;
 
+        $payer = $request->input('payer', []);
+        if (! is_array($payer)) {
+            $payer = [];
+        }
+        if (empty($payer['email']) && auth()->check()) {
+            $payer['email'] = (string) auth()->user()->email;
+        }
+
         $payload = [
             'transaction_amount' => $amount,
             'token'              => $request->token,
@@ -244,7 +252,7 @@ class MercadoPagoController extends Controller
             'capture'            => false,
             'external_reference' => (string) $serviceRequest->id,
             'notification_url'   => config('app.url') . '/api/v1/payments/mp/webhook',
-            'payer'              => $request->payer,
+            'payer'              => $payer,
             'metadata'           => [
                 'service_request_id' => $serviceRequest->id,
                 'worker_id'          => $serviceRequest->worker_id,
