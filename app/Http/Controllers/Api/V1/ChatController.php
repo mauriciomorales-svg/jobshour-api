@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Events\NewMessage;
+use App\Events\ChatMessageNotify;
 use App\Http\Controllers\Controller;
 use App\Models\Message;
 use App\Models\ServiceRequest;
@@ -13,10 +14,84 @@ use Illuminate\Support\Facades\Log;
 
 class ChatController extends Controller
 {
+    private function canAccessRequestChat(ServiceRequest $serviceRequest, int $userId): bool
+    {
+        $isClient = (int) $serviceRequest->client_id === $userId;
+        $isWorker = $serviceRequest->worker && (int) $serviceRequest->worker->user_id === $userId;
+
+        // Mantener compatibilidad: demandas pendientes permiten primer contacto.
+        $isPendingDemand = $serviceRequest->status === 'pending';
+
+        return $isClient || $isWorker || $isPendingDemand;
+    }
+
+    public function threads(Request $request)
+    {
+        $user = $request->user();
+
+        $threads = ServiceRequest::query()
+            ->where(function ($q) use ($user) {
+                $q->where('client_id', $user->id)
+                    ->orWhereHas('worker', function ($wq) use ($user) {
+                        $wq->where('user_id', $user->id);
+                    });
+            })
+            ->with([
+                'client:id,name,avatar,email',
+                'worker.user:id,name,avatar,email',
+                'messages' => function ($mq) {
+                    $mq->select('id', 'service_request_id', 'sender_id', 'body', 'type', 'created_at', 'read_at')
+                        ->latest('created_at');
+                },
+            ])
+            ->latest('updated_at')
+            ->limit(40)
+            ->get()
+            ->map(function (ServiceRequest $sr) use ($user) {
+                $isWorker = $sr->worker && (int) $sr->worker->user_id === (int) $user->id;
+                $other = $isWorker ? $sr->client : ($sr->worker?->user);
+                $lastMessage = $sr->messages->first();
+
+                $unreadCount = $sr->messages
+                    ->where('sender_id', '!=', $user->id)
+                    ->whereNull('read_at')
+                    ->count();
+
+                return [
+                    'request_id' => $sr->id,
+                    'description' => $sr->description,
+                    'status' => $sr->status,
+                    'last_message' => $lastMessage?->body,
+                    'last_message_at' => $lastMessage?->created_at?->toISOString(),
+                    'unread_count' => $unreadCount,
+                    'other_person' => $other ? [
+                        'name' => $other->name,
+                        'avatar' => $other->avatar,
+                        'email' => $other->email ?? null,
+                    ] : null,
+                ];
+            })
+            ->filter(fn ($item) => !empty($item['other_person']))
+            ->values();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $threads,
+        ]);
+    }
+
     public function messages(Request $request, ServiceRequest $serviceRequest)
     {
+        $user = $request->user();
+        if (! $this->canAccessRequestChat($serviceRequest, (int) $user->id)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No autorizado',
+            ], 403);
+        }
+
         $messages = $serviceRequest->messages()
-            ->with('sender:id,name,avatar')
+            ->with('sender:id,name,avatar,email')
             ->orderBy('created_at')
             ->limit(100)
             ->get()
@@ -25,6 +100,7 @@ class ChatController extends Controller
                 'sender_id' => $m->sender_id,
                 'sender_name' => $m->sender->name,
                 'sender_avatar' => $m->sender->avatar,
+                'sender_email' => $m->sender->email,
                 'body' => $m->body,
                 'type' => $m->type,
                 'read_at' => $m->read_at?->toISOString(),
@@ -42,12 +118,10 @@ class ChatController extends Controller
         try {
             // Validar que el usuario puede enviar mensajes en esta solicitud
             $user = $request->user();
-            $isClient = $serviceRequest->client_id === $user->id;
-            $isWorker = $serviceRequest->worker && $serviceRequest->worker->user_id === $user->id;
-            // Demandas pendientes: cualquier usuario autenticado puede contactar al cliente
-            $isPendingDemand = $serviceRequest->status === 'pending';
+            $isClient = (int) $serviceRequest->client_id === (int) $user->id;
+            $isWorker = $serviceRequest->worker && (int) $serviceRequest->worker->user_id === (int) $user->id;
 
-            if (!$isClient && !$isWorker && !$isPendingDemand) {
+            if (! $this->canAccessRequestChat($serviceRequest, (int) $user->id)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'No autorizado para enviar mensajes en esta solicitud'
@@ -103,7 +177,7 @@ class ChatController extends Controller
                 'type' => $type,
             ]);
 
-            $message->load('sender:id,name,avatar');
+            $message->load('sender:id,name,avatar,email');
 
             // Intentar broadcast pero no fallar si falla
             try {
@@ -122,6 +196,17 @@ class ChatController extends Controller
             try {
                 $recipientId = $isClient ? $serviceRequest->worker?->user_id : $serviceRequest->client_id;
                 if ($recipientId && $recipientId !== $user->id) {
+                    // Aviso realtime directo al canal de usuario (fallback de notificaciones de chat)
+                    broadcast(new ChatMessageNotify(
+                        recipientUserId: (int) $recipientId,
+                        requestId: (int) $serviceRequest->id,
+                        messageId: (int) $message->id,
+                        senderId: (int) $user->id,
+                        senderName: (string) ($user->name ?? 'Usuario'),
+                        preview: (string) ($type === 'image' ? '📷 Imagen' : mb_substr($request->input('body', ''), 0, 100)),
+                        senderEmail: $user->email ? (string) $user->email : null
+                    ));
+
                     $recipient = User::find($recipientId);
                     if ($recipient?->fcm_token) {
                         $displayBody = $type === 'image' ? '📷 Imagen' : (strlen($body) > 80 ? substr($body, 0, 80) . '...' : $body);
@@ -142,6 +227,7 @@ class ChatController extends Controller
                     'sender_id' => $message->sender_id,
                     'sender_name' => $message->sender->name ?? 'Usuario',
                     'sender_avatar' => $message->sender->avatar ?? null,
+                    'sender_email' => $message->sender->email ?? null,
                     'body' => $message->body,
                     'type' => $message->type,
                     'created_at' => $message->created_at->toISOString(),
@@ -170,8 +256,16 @@ class ChatController extends Controller
 
     public function markRead(Request $request, ServiceRequest $serviceRequest)
     {
+        $user = $request->user();
+        if (! $this->canAccessRequestChat($serviceRequest, (int) $user->id)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No autorizado',
+            ], 403);
+        }
+
         $serviceRequest->messages()
-            ->where('sender_id', '!=', $request->user()->id)
+            ->where('sender_id', '!=', $user->id)
             ->whereNull('read_at')
             ->update(['read_at' => now()]);
 

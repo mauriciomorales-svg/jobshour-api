@@ -19,11 +19,49 @@ class MercadoPagoController extends Controller
         $this->accessToken = (string) (config('mercadopago.access_token') ?? '');
     }
 
+    private function isWebhookSignatureValid(Request $request): bool
+    {
+        $secret = trim((string) config('services.mercadopago.webhook_secret', ''));
+        if ($secret === '') {
+            return true;
+        }
+
+        $xSignature = (string) $request->header('x-signature', '');
+        $xRequestId = (string) $request->header('x-request-id', '');
+        $dataId = (string) ($request->input('data.id') ?? $request->input('id') ?? '');
+        if ($xSignature === '' || $xRequestId === '' || $dataId === '') {
+            return false;
+        }
+
+        $parts = [];
+        foreach (explode(',', $xSignature) as $segment) {
+            $tuple = explode('=', trim($segment), 2);
+            if (count($tuple) === 2) {
+                $parts[$tuple[0]] = $tuple[1];
+            }
+        }
+        $ts = $parts['ts'] ?? null;
+        $v1 = $parts['v1'] ?? null;
+        if (! $ts || ! $v1) {
+            return false;
+        }
+
+        $manifest = "id:{$dataId};request-id:{$xRequestId};ts:{$ts};";
+        $expected = hash_hmac('sha256', $manifest, $secret);
+
+        return hash_equals($expected, $v1);
+    }
+
     /**
      * Generar link de pago y enviarlo por chat al finalizar el trabajo
      */
     public function createPaymentLink(Request $request)
     {
+        if (trim($this->accessToken) === '') {
+            Log::warning('[MP] createPaymentLink sin access_token configurado');
+            return response()->json(['status' => 'error', 'message' => 'Mercado Pago no está configurado en el servidor'], 503);
+        }
+
         $request->validate([
             'service_request_id' => 'required|integer|exists:service_requests,id',
         ]);
@@ -31,12 +69,32 @@ class MercadoPagoController extends Controller
         $serviceRequest = ServiceRequest::with(['worker.user', 'client'])->findOrFail($request->service_request_id);
 
         $workerId = auth()->id();
-        if ($serviceRequest->worker->user_id !== $workerId) {
+        if (! $workerId) {
+            return response()->json(['status' => 'error', 'message' => 'No autenticado'], 401);
+        }
+        if (! $serviceRequest->worker || ! $serviceRequest->worker->user) {
+            Log::warning('[MP] createPaymentLink sin worker asociado', ['service_request_id' => $serviceRequest->id]);
+            return response()->json(['status' => 'error', 'message' => 'La solicitud no tiene trabajador asignado'], 422);
+        }
+        if (! $serviceRequest->client) {
+            Log::warning('[MP] createPaymentLink sin cliente asociado', ['service_request_id' => $serviceRequest->id]);
+            return response()->json(['status' => 'error', 'message' => 'La solicitud no tiene cliente asociado'], 422);
+        }
+        if ((int) $serviceRequest->worker->user_id !== (int) $workerId) {
             return response()->json(['status' => 'error', 'message' => 'Solo el trabajador puede solicitar el pago'], 403);
         }
 
-        $tarifa   = $serviceRequest->agreed_price ?? $serviceRequest->worker->hourly_rate ?? 10000;
-        $amount   = round($tarifa * 1.08);
+        $baseClp = $serviceRequest->mercadoPagoBasePriceClp();
+        $pricingSource = $serviceRequest->mercadoPagoPricingSource();
+        $amount = (int) round($baseClp * 1.08);
+        Log::info('[MP] createPaymentLink pricing', [
+            'service_request_id' => $serviceRequest->id,
+            'base_clp' => $baseClp,
+            'charged_clp' => $amount,
+            'source' => $pricingSource,
+            'final_price' => $serviceRequest->final_price,
+            'offered_price' => $serviceRequest->offered_price,
+        ]);
         $clientEmail = $serviceRequest->client->email ?? 'cliente@jobshours.com';
 
         $payload = [
@@ -64,8 +122,16 @@ class MercadoPagoController extends Controller
             ->post("{$this->baseUrl}/checkout/preferences", $payload);
 
         if (!$response->successful()) {
-            Log::error('[MP] Error creando preferencia', ['body' => $response->json()]);
-            return response()->json(['status' => 'error', 'message' => 'Error al generar link de pago'], 500);
+            Log::error('[MP] Error creando preferencia', [
+                'status' => $response->status(),
+                'body' => $response->json(),
+                'service_request_id' => $serviceRequest->id,
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No se pudo generar el link de pago con Mercado Pago',
+                'mp_status' => $response->status(),
+            ], 502);
         }
 
         $data = $response->json();
@@ -101,7 +167,9 @@ class MercadoPagoController extends Controller
         $serviceRequest->messages()->create([
             'sender_id' => $workerId,
             'body'      => $messageBody,
-            'type'      => 'payment_link',
+            // Tabla messages permite: text, image, location, system
+            // El subtipo "payment_link" viaja dentro del body JSON.
+            'type'      => 'system',
         ]);
 
         // Push al cliente
@@ -125,6 +193,12 @@ class MercadoPagoController extends Controller
             'link'       => $initPoint,
             'amount'     => $amount,
             'preference' => $data['id'],
+            'pricing'    => [
+                'base_clp' => $baseClp,
+                'charged_clp' => $amount,
+                'factor' => 1.08,
+                'source' => $pricingSource,
+            ],
         ]);
     }
 
@@ -149,12 +223,12 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Mercado Pago no está configurado en el servidor'], 503);
         }
 
-        $base = $serviceRequest->agreed_price;
-        if ($base === null || (float) $base <= 0) {
-            return response()->json(['status' => 'error', 'message' => 'La solicitud no tiene precio acordado válido'], 422);
+        $baseClp = $serviceRequest->mercadoPagoBasePriceClp();
+        if ($baseClp <= 0) {
+            return response()->json(['status' => 'error', 'message' => 'La solicitud no tiene precio válido para cobrar'], 422);
         }
 
-        $amount = round((float) $base * 1.08, 2); // +8% comisión
+        $amount = round((float) $baseClp * 1.08, 2); // +8% comisión
 
         $payload = [
             'transaction_amount' => $amount,
@@ -195,6 +269,10 @@ class MercadoPagoController extends Controller
             'payment_id' => $data['id'],
             'mp_status'  => $data['status'],
             'amount'     => $amount,
+            'pricing'    => [
+                'base_clp' => $baseClp,
+                'source' => $serviceRequest->mercadoPagoPricingSource(),
+            ],
         ]);
     }
 
@@ -225,12 +303,12 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Mercado Pago no está configurado en el servidor'], 503);
         }
 
-        $base = $serviceRequest->agreed_price;
-        if ($base === null || (float) $base <= 0) {
-            return response()->json(['status' => 'error', 'message' => 'La solicitud no tiene precio acordado válido'], 422);
+        $baseClp = $serviceRequest->mercadoPagoBasePriceClp();
+        if ($baseClp <= 0) {
+            return response()->json(['status' => 'error', 'message' => 'La solicitud no tiene precio válido para cobrar'], 422);
         }
 
-        $amount = round((float) $base * 1.08, 2);
+        $amount = round((float) $baseClp * 1.08, 2);
 
         $issuerId = $request->input('issuer_id');
         $issuerId = ($issuerId !== null && $issuerId !== '') ? (string) $issuerId : null;
@@ -303,6 +381,13 @@ class MercadoPagoController extends Controller
     public function capturePayment(Request $request, $serviceRequestId)
     {
         $serviceRequest = ServiceRequest::findOrFail($serviceRequestId);
+        $user = $request->user();
+
+        $isClient = (int) $serviceRequest->client_id === (int) $user->id;
+        $isWorker = $serviceRequest->worker && (int) $serviceRequest->worker->user_id === (int) $user->id;
+        if (! $isClient && ! $isWorker) {
+            return response()->json(['status' => 'error', 'message' => 'No autorizado'], 403);
+        }
 
         if (!$serviceRequest->mp_payment_id) {
             return response()->json(['status' => 'error', 'message' => 'Sin pago MP asociado'], 400);
@@ -420,6 +505,14 @@ class MercadoPagoController extends Controller
      */
     public function webhook(Request $request)
     {
+        if (! $this->isWebhookSignatureValid($request)) {
+            Log::warning('[MP] Webhook firma inválida', [
+                'ip' => $request->ip(),
+                'x_request_id' => $request->header('x-request-id'),
+            ]);
+            return response()->json(['status' => 'invalid_signature'], 401);
+        }
+
         Log::info('[MP] Webhook recibido', $request->all());
 
         $type = $request->input('type') ?? $request->input('topic');

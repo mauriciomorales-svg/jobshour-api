@@ -11,14 +11,18 @@ use App\Models\User;
 use App\Models\Worker;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class IntegratedQuoteController extends Controller
 {
     private string $mpBase = 'https://api.mercadopago.com';
+    private ?bool $hasStoreOrderIntegratedQuoteId = null;
+    private ?bool $hasServiceRequestIntegratedQuoteId = null;
 
     private function mpToken(): string
     {
@@ -27,7 +31,8 @@ class IntegratedQuoteController extends Controller
 
     private function findQuoteByPublicToken(string $token): ?IntegratedQuote
     {
-        return IntegratedQuote::whereRaw("metadata->>'public_token' = ?", [$token])->first();
+        // Consulta JSON portable (MySQL/PostgreSQL) para evitar 500 en producción por sintaxis específica.
+        return IntegratedQuote::where('metadata->public_token', $token)->first();
     }
 
     private function isQuoteExpired(IntegratedQuote $quote): bool
@@ -41,6 +46,48 @@ class IntegratedQuoteController extends Controller
             return Carbon::parse($expiresAt)->isPast();
         } catch (\Throwable) {
             return false;
+        }
+    }
+
+    private function hasStoreOrderQuoteColumn(): bool
+    {
+        if ($this->hasStoreOrderIntegratedQuoteId !== null) {
+            return $this->hasStoreOrderIntegratedQuoteId;
+        }
+        return $this->hasStoreOrderIntegratedQuoteId = Schema::hasColumn('store_orders', 'integrated_quote_id');
+    }
+
+    private function hasServiceRequestQuoteColumn(): bool
+    {
+        if ($this->hasServiceRequestIntegratedQuoteId !== null) {
+            return $this->hasServiceRequestIntegratedQuoteId;
+        }
+        return $this->hasServiceRequestIntegratedQuoteId = Schema::hasColumn('service_requests', 'integrated_quote_id');
+    }
+
+    private function latestStoreOrderForQuote(int $quoteId): ?StoreOrder
+    {
+        try {
+            return StoreOrder::where('integrated_quote_id', $quoteId)->latest('id')->first();
+        } catch (QueryException $e) {
+            Log::warning('[IntegratedQuote] store_orders sin integrated_quote_id', [
+                'quote_id' => $quoteId,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    private function latestServiceRequestForQuote(int $quoteId): ?ServiceRequest
+    {
+        try {
+            return ServiceRequest::where('integrated_quote_id', $quoteId)->latest('id')->first();
+        } catch (QueryException $e) {
+            Log::warning('[IntegratedQuote] service_requests sin integrated_quote_id', [
+                'quote_id' => $quoteId,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
         }
     }
 
@@ -217,6 +264,7 @@ class IntegratedQuoteController extends Controller
                 'confirmation_code'   => $confirmationCode,
                 'expires_at'          => Carbon::now()->addHours(24),
                 'integrated_quote_id' => $quote->id,
+                'public_token'        => Str::random(48),
             ]);
 
             // Crear service_request pre-asignado al mismo worker (no matching abierto).
@@ -292,7 +340,7 @@ class IntegratedQuoteController extends Controller
             'external_reference' => (string) $order->id,
             'notification_url'   => config('app.url') . '/api/v1/store/webhook',
             'back_urls' => [
-                'success' => config('app.url') . '/tienda/success?confirmation_code=' . $order->confirmation_code . '&external_reference=' . $order->id,
+                'success' => config('app.url') . '/tienda/success?confirmation_code=' . $order->confirmation_code . '&external_reference=' . $order->id . '&token=' . $order->public_token,
                 'failure' => config('app.url') . '/tienda/failure',
                 'pending' => config('app.url') . '/tienda/pending',
             ],
@@ -342,6 +390,7 @@ class IntegratedQuoteController extends Controller
                 'tool_wear' => $quote->tool_wear_amount,
             ],
             'confirmation_code' => $order->confirmation_code,
+            'public_token' => $order->public_token,
         ]);
     }
 
@@ -527,7 +576,7 @@ class IntegratedQuoteController extends Controller
             ->get();
 
         $data = $quotes->map(function (IntegratedQuote $quote) {
-            $order = StoreOrder::where('integrated_quote_id', $quote->id)->latest('id')->first();
+            $order = $this->latestStoreOrderForQuote((int) $quote->id);
             $token = data_get($quote->metadata, 'public_token');
             $expiresAt = data_get($quote->metadata, 'expires_at');
 
@@ -581,8 +630,8 @@ class IntegratedQuoteController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Cotización expirada'], 410);
         }
 
-        $order = StoreOrder::where('integrated_quote_id', $quote->id)->latest('id')->first();
-        $serviceRequest = ServiceRequest::where('integrated_quote_id', $quote->id)->latest('id')->first();
+        $order = $this->latestStoreOrderForQuote((int) $quote->id);
+        $serviceRequest = $this->latestServiceRequestForQuote((int) $quote->id);
 
         return response()->json([
             'status' => 'success',
@@ -665,7 +714,7 @@ class IntegratedQuoteController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Faltan datos del comprador'], 422);
         }
 
-        $existingOrder = StoreOrder::where('integrated_quote_id', $quote->id)->latest('id')->first();
+        $existingOrder = $this->latestStoreOrderForQuote((int) $quote->id);
         if ($existingOrder && $quote->payment_link) {
             return response()->json([
                 'status' => 'success',
@@ -673,6 +722,7 @@ class IntegratedQuoteController extends Controller
                 'store_order_id' => $existingOrder->id,
                 'payment_link' => $quote->payment_link,
                 'confirmation_code' => $existingOrder->confirmation_code,
+                'public_token' => $existingOrder->public_token,
                 'total' => $quote->total_amount,
             ]);
         }
@@ -704,7 +754,7 @@ class IntegratedQuoteController extends Controller
         ) {
             $confirmationCode = str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
 
-            $order = StoreOrder::create([
+            $orderPayload = [
                 'worker_id' => $worker->id,
                 'buyer_name' => $buyerName,
                 'buyer_email' => $buyerEmail,
@@ -716,12 +766,15 @@ class IntegratedQuoteController extends Controller
                 'status' => 'pending',
                 'confirmation_code' => $confirmationCode,
                 'expires_at' => Carbon::now()->addHours(24),
-                'integrated_quote_id' => $quote->id,
-            ]);
+                'public_token' => Str::random(48),
+            ];
+            if ($this->hasStoreOrderQuoteColumn()) {
+                $orderPayload['integrated_quote_id'] = $quote->id;
+            }
+            $order = StoreOrder::create($orderPayload);
 
             if ((int) $quote->service_amount > 0 || $quote->service_type || $quote->service_description) {
-                $serviceRequest = ServiceRequest::create([
-                    'integrated_quote_id' => $quote->id,
+                $servicePayload = [
                     'client_id' => $quote->client_id,
                     'worker_id' => $worker->id,
                     'category_id' => $worker->category_id,
@@ -739,7 +792,11 @@ class IntegratedQuoteController extends Controller
                         'integrated' => true,
                         'store_order_id' => $order->id,
                     ],
-                ]);
+                ];
+                if ($this->hasServiceRequestQuoteColumn()) {
+                    $servicePayload['integrated_quote_id'] = $quote->id;
+                }
+                $serviceRequest = ServiceRequest::create($servicePayload);
             }
         });
 
@@ -785,7 +842,7 @@ class IntegratedQuoteController extends Controller
             'external_reference' => (string) $order->id,
             'notification_url'   => config('app.url') . '/api/v1/store/webhook',
             'back_urls' => [
-                'success' => config('app.url') . '/tienda/success?confirmation_code=' . $order->confirmation_code . '&external_reference=' . $order->id,
+                'success' => config('app.url') . '/tienda/success?confirmation_code=' . $order->confirmation_code . '&external_reference=' . $order->id . '&token=' . $order->public_token,
                 'failure' => config('app.url') . '/tienda/failure',
                 'pending' => config('app.url') . '/tienda/pending',
             ],
@@ -827,6 +884,7 @@ class IntegratedQuoteController extends Controller
             'service_request_id' => $serviceRequest?->id,
             'payment_link' => $payLink,
             'confirmation_code' => $order->confirmation_code,
+            'public_token' => $order->public_token,
             'total' => $quote->total_amount,
         ]);
     }

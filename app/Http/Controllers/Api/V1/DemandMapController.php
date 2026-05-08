@@ -191,7 +191,7 @@ class DemandMapController extends Controller
                 'travel_role' => $validated['travel_role'] ?? null,
                 'category_type' => $validated['category_type'] ?? 'fixed',
                 'description' => $validated['description'],
-                'offered_price' => $validated['offered_price'] ?? 0,
+                'offered_price' => array_key_exists('offered_price', $validated) ? $validated['offered_price'] : null,
                 'urgency' => $dbUrgency,
                 'status' => 'pending',
                 'pin_expires_at' => now()->addMinutes($ttl),

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Worker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -159,5 +160,61 @@ class AuthController extends Controller
             'user' => $user->load('worker'),
             'token' => $token,
         ]);
+    }
+
+    public function forgotPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|string|email',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+        if (! $user) {
+            // Respuesta neutra para no filtrar existencia.
+            return response()->json(['message' => 'Si el correo existe, enviamos un codigo de recuperacion.']);
+        }
+
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $user->password_reset_code = $code;
+        $user->password_reset_expires_at = now()->addMinutes(30);
+        $user->save();
+
+        try {
+            Mail::raw(
+                "Tu codigo para recuperar contrasena en JobsHours es: {$code}\n\nEste codigo vence en 30 minutos.",
+                function ($message) use ($user) {
+                    $message->to($user->email)->subject('Recuperacion de contrasena - JobsHours');
+                }
+            );
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('[Email] Password reset mail failed: ' . $e->getMessage());
+        }
+
+        return response()->json(['message' => 'Si el correo existe, enviamos un codigo de recuperacion.']);
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|string|email',
+            'code' => 'required|string|size:6',
+            'password' => 'required|string|min:8',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+        if (! $user || $user->password_reset_code !== $request->code) {
+            return response()->json(['message' => 'Codigo invalido'], 400);
+        }
+
+        if (! $user->password_reset_expires_at || now()->gt($user->password_reset_expires_at)) {
+            return response()->json(['message' => 'Codigo expirado. Solicita uno nuevo.'], 400);
+        }
+
+        $user->password = Hash::make($request->password);
+        $user->password_reset_code = null;
+        $user->password_reset_expires_at = null;
+        $user->save();
+
+        return response()->json(['message' => 'Contrasena actualizada correctamente']);
     }
 }

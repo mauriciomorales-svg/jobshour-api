@@ -37,7 +37,6 @@
     33 => 'ProtoneMedia\\LaravelFFMpeg\\Support\\ServiceProvider',
     34 => 'Spatie\\Permission\\PermissionServiceProvider',
     35 => 'App\\Providers\\AppServiceProvider',
-    36 => 'App\\Providers\\TelescopeServiceProvider',
   ),
   'eager' => 
   array (
@@ -60,7 +59,6 @@
     16 => 'ProtoneMedia\\LaravelFFMpeg\\Support\\ServiceProvider',
     17 => 'Spatie\\Permission\\PermissionServiceProvider',
     18 => 'App\\Providers\\AppServiceProvider',
-    19 => 'App\\Providers\\TelescopeServiceProvider',
   ),
   'deferred' => 
   array (

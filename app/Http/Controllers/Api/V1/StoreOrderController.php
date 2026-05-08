@@ -12,6 +12,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class StoreOrderController extends Controller
 {
@@ -23,12 +24,47 @@ class StoreOrderController extends Controller
         return (string) config('services.mercadopago.access_token', '');
     }
 
+    private function isWebhookSignatureValid(Request $request): bool
+    {
+        $secret = trim((string) config('services.mercadopago.webhook_secret', ''));
+        if ($secret === '') {
+            // Compatibilidad: si no hay secret configurado, no bloquear webhook.
+            return true;
+        }
+
+        $xSignature = (string) $request->header('x-signature', '');
+        $xRequestId = (string) $request->header('x-request-id', '');
+        $dataId = (string) ($request->input('data.id') ?? $request->input('id') ?? '');
+        if ($xSignature === '' || $xRequestId === '' || $dataId === '') {
+            return false;
+        }
+
+        $parts = [];
+        foreach (explode(',', $xSignature) as $segment) {
+            $tuple = explode('=', trim($segment), 2);
+            if (count($tuple) === 2) {
+                $parts[$tuple[0]] = $tuple[1];
+            }
+        }
+        $ts = $parts['ts'] ?? null;
+        $v1 = $parts['v1'] ?? null;
+        if (! $ts || ! $v1) {
+            return false;
+        }
+
+        $manifest = "id:{$dataId};request-id:{$xRequestId};ts:{$ts};";
+        $expected = hash_hmac('sha256', $manifest, $secret);
+
+        return hash_equals($expected, $v1);
+    }
+
     /**
      * POST /api/v1/store/orders
      * Cliente crea pedido y obtiene link de pago.
      */
     public function create(Request $request)
     {
+        $traceId = (string) Str::uuid();
         $validated = $request->validate([
             'worker_id'          => 'required|integer|exists:workers,id',
             'items'              => 'required|array|min:1',
@@ -65,6 +101,7 @@ class StoreOrderController extends Controller
             'status'            => 'pending',
             'confirmation_code' => $confirmationCode,
             'expires_at'        => Carbon::now()->addHours(24),
+            'public_token'      => Str::random(48),
         ]);
 
         // 2) Crear preferencia MP.
@@ -83,7 +120,7 @@ class StoreOrderController extends Controller
             'external_reference' => (string) $order->id,
             'notification_url'   => config('app.url') . '/api/v1/store/webhook',
             'back_urls' => [
-                'success' => config('app.url') . '/tienda/success?confirmation_code=' . $confirmationCode . '&external_reference=' . $order->id,
+                'success' => config('app.url') . '/tienda/success?confirmation_code=' . $confirmationCode . '&external_reference=' . $order->id . '&token=' . $order->public_token,
                 'failure' => config('app.url') . '/tienda/failure',
                 'pending' => config('app.url') . '/tienda/pending',
             ],
@@ -96,8 +133,17 @@ class StoreOrderController extends Controller
             ->post("{$this->mpBase}/checkout/preferences", $mpPayload);
 
         if (!$mpResponse->successful()) {
-            Log::error('[StoreOrder] Error MP preferencia', ['body' => $mpResponse->json()]);
-            return response()->json(['status' => 'error', 'message' => 'Error al generar link de pago'], 500);
+            Log::error('[StoreOrder] Error MP preferencia', [
+                'trace_id' => $traceId,
+                'order_id' => $order->id,
+                'http_status' => $mpResponse->status(),
+                'body' => $mpResponse->json(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error al generar link de pago',
+                'trace_id' => $traceId,
+            ], 500);
         }
 
         $mpData = $mpResponse->json();
@@ -107,6 +153,15 @@ class StoreOrderController extends Controller
 
         $order->update([
             'mp_preference_id' => $mpData['id'] ?? null,
+        ]);
+
+        Log::info('[StoreOrder] Checkout link generado', [
+            'trace_id' => $traceId,
+            'order_id' => $order->id,
+            'mp_preference_id' => $mpData['id'] ?? null,
+            'worker_id' => $worker->id,
+            'amount' => $amount,
+            'buyer_email' => $validated['buyer_email'],
         ]);
 
         // Push FCM al worker (no bloqueante).
@@ -126,10 +181,12 @@ class StoreOrderController extends Controller
         return response()->json([
             'status'            => 'success',
             'order_id'          => $order->id,
+            'public_token'      => $order->public_token,
             'payment_link'      => $payLink,
             'amount'            => $amount,
             'confirmation_code' => $confirmationCode,
             'expires_at'        => optional($order->expires_at)->toIso8601String(),
+            'trace_id'          => $traceId,
         ]);
     }
 
@@ -211,11 +268,16 @@ class StoreOrderController extends Controller
      * GET /api/v1/store/orders/{id}
      * Estado público para que el cliente vea la timeline.
      */
-    public function showPublic(int $id)
+    public function showPublic(Request $request, int $id)
     {
         $order = StoreOrder::where('id', $id)->first();
         if (!$order) {
             return response()->json(['status' => 'error', 'message' => 'Pedido no encontrado'], 404);
+        }
+
+        $token = (string) $request->query('token', '');
+        if ($token === '' || !hash_equals((string) $order->public_token, $token)) {
+            return response()->json(['status' => 'error', 'message' => 'Token inválido'], 403);
         }
 
         $quote = null;
@@ -339,11 +401,77 @@ class StoreOrderController extends Controller
     }
 
     /**
+     * POST /api/v1/store/orders/{id}/qa-paid
+     * Bypass QA: marca un pedido como pagado con clave temporal.
+     */
+    public function qaMarkPaid(Request $request, int $id)
+    {
+        if (app()->environment('production')) {
+            return response()->json(['status' => 'error', 'message' => 'No disponible en producción'], 403);
+        }
+
+        $validated = $request->validate([
+            'qa_key' => 'required|string',
+            'note' => 'nullable|string|max:120',
+        ]);
+
+        $expected = (string) env('STORE_QA_BYPASS_KEY', '');
+        if ($expected === '' || !hash_equals($expected, (string) $validated['qa_key'])) {
+            return response()->json(['status' => 'error', 'message' => 'Clave QA inválida'], 403);
+        }
+
+        $order = StoreOrder::findOrFail($id);
+        $manualPaymentId = 'qa-manual-' . $order->id . '-' . now()->format('YmdHis');
+
+        $updates = [
+            'mp_payment_id' => $manualPaymentId,
+            'mp_status' => 'approved',
+        ];
+        if (in_array($order->status, ['pending', 'paid'], true)) {
+            $updates['status'] = 'paid';
+        }
+        $order->update($updates);
+
+        if ($order->integrated_quote_id) {
+            IntegratedQuote::where('id', $order->integrated_quote_id)->update([
+                'mp_payment_id' => $manualPaymentId,
+                'mp_status' => 'approved',
+                'status' => 'paid',
+            ]);
+        }
+
+        Log::warning('[StoreOrder][QA] Pedido marcado como pagado manualmente', [
+            'order_id' => $order->id,
+            'manual_payment_id' => $manualPaymentId,
+            'note' => $validated['note'] ?? null,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Pedido marcado como pagado (QA)',
+            'data' => [
+                'order_id' => $order->id,
+                'mp_payment_id' => $manualPaymentId,
+                'mp_status' => 'approved',
+                'order_status' => $order->fresh()->status,
+            ],
+        ]);
+    }
+
+    /**
      * POST /api/v1/store/webhook
      * Webhook Mercado Pago para store_orders (público).
      */
     public function webhook(Request $request)
     {
+        if (! $this->isWebhookSignatureValid($request)) {
+            Log::warning('[StoreOrder] Webhook firma inválida', [
+                'ip' => $request->ip(),
+                'x_request_id' => $request->header('x-request-id'),
+            ]);
+            return response()->json(['status' => 'invalid_signature'], 401);
+        }
+
         $type = $request->input('type') ?? $request->input('topic');
         if ($type !== 'payment') {
             return response()->json(['status' => 'ok']);

@@ -29,11 +29,14 @@ class NewMessage implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
+        $this->message->loadMissing('sender:id,name,avatar,email');
+
         return [
             'id' => $this->message->id,
             'sender_id' => $this->message->sender_id,
             'sender_name' => $this->message->sender->name,
             'sender_avatar' => $this->message->sender->avatar,
+            'sender_email' => $this->message->sender->email,
             'body' => $this->message->body,
             'type' => $this->message->type,
             'created_at' => $this->message->created_at->toISOString(),

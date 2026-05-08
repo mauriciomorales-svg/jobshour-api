@@ -41,6 +41,8 @@ class User extends Authenticatable
         'rut_verified_at',
         'email_verification_code',
         'email_verification_expires_at',
+        'password_reset_code',
+        'password_reset_expires_at',
     ];
 
     protected $hidden = [
@@ -51,6 +53,7 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'email_verification_expires_at' => 'datetime',
+        'password_reset_expires_at' => 'datetime',
         'password' => 'hashed',
         'is_active' => 'boolean',
         'is_pioneer' => 'boolean',

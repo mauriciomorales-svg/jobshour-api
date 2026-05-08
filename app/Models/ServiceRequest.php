@@ -155,4 +155,53 @@ class ServiceRequest extends Model
         
         return $result->lng + (mt_rand(-10, 10) * 0.0001);
     }
+
+    /**
+     * Precio acordado en CLP (misma prioridad que ServiceRequestController::complete).
+     */
+    public function negotiatedBasePriceClp(): ?float
+    {
+        $base = $this->final_price
+            ?? ($this->client_approved_adjustment ? $this->adjusted_price : null)
+            ?? $this->offered_price;
+
+        if ($base === null || (float) $base <= 0) {
+            return null;
+        }
+
+        return round((float) $base, 2);
+    }
+
+    /**
+     * Monto CLP base antes del factor Mercado Pago (+8%). Fallback: tarifa horaria o mínimo legacy.
+     */
+    public function mercadoPagoBasePriceClp(): float
+    {
+        $negotiated = $this->negotiatedBasePriceClp();
+        if ($negotiated !== null && $negotiated > 0) {
+            return $negotiated;
+        }
+
+        $this->loadMissing('worker');
+        $hourly = $this->worker?->hourly_rate;
+        if ($hourly !== null && (float) $hourly > 0) {
+            return (float) $hourly;
+        }
+
+        return 10000.0;
+    }
+
+    /** Origen del base para cobro (auditoría / respuestas JSON). */
+    public function mercadoPagoPricingSource(): string
+    {
+        if ($this->negotiatedBasePriceClp() !== null) {
+            return 'negotiated';
+        }
+        $this->loadMissing('worker');
+        if ($this->worker?->hourly_rate !== null && (float) $this->worker->hourly_rate > 0) {
+            return 'hourly_rate';
+        }
+
+        return 'default';
+    }
 }

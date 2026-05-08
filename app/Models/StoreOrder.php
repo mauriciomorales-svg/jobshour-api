@@ -25,6 +25,7 @@ class StoreOrder extends Model
         'rejected_at',
         'reject_reason',
         'integrated_quote_id',
+        'public_token',
     ];
 
     protected $casts = [

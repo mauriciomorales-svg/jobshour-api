@@ -13,6 +13,7 @@ use App\Models\Worker;
 use App\Models\Message;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class ServiceRequestController extends Controller
 {
@@ -378,6 +379,16 @@ class ServiceRequestController extends Controller
                 ], 422);
             }
 
+            $effectiveFinalPrice = $serviceRequest->final_price
+                ?? ($serviceRequest->client_approved_adjustment ? $serviceRequest->adjusted_price : null)
+                ?? $serviceRequest->offered_price;
+            if ($effectiveFinalPrice === null || (float) $effectiveFinalPrice <= 0) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Debes definir y acordar un monto final mayor a 0 antes de completar el servicio'
+                ], 422);
+            }
+
             // Verificar que no haya ajuste de precio pendiente
             if ($serviceRequest->adjusted_price && !$serviceRequest->client_approved_adjustment) {
                 return response()->json([
@@ -392,12 +403,23 @@ class ServiceRequestController extends Controller
             ]);
 
             DB::transaction(function() use ($serviceRequest, $validated) {
-                $serviceRequest->update([
+                $updateData = [
                     'status' => 'completed',
                     'completed_at' => now(),
-                    'delivery_photo' => $validated['delivery_photo'] ?? null,
-                    'delivery_signature' => $validated['delivery_signature'] ?? null,
-                ]);
+                    'final_price' => $serviceRequest->final_price
+                        ?? ($serviceRequest->client_approved_adjustment ? $serviceRequest->adjusted_price : null)
+                        ?? $serviceRequest->offered_price,
+                ];
+
+                // Compatibilidad con entornos que aún no tienen estas columnas.
+                if (Schema::hasColumn('service_requests', 'delivery_photo')) {
+                    $updateData['delivery_photo'] = $validated['delivery_photo'] ?? null;
+                }
+                if (Schema::hasColumn('service_requests', 'delivery_signature')) {
+                    $updateData['delivery_signature'] = $validated['delivery_signature'] ?? null;
+                }
+
+                $serviceRequest->update($updateData);
 
                 // Restaurar disponibilidad del worker solo si no tiene otros trabajos activos
                 $worker = Worker::find($serviceRequest->worker_id);
@@ -673,8 +695,8 @@ class ServiceRequestController extends Controller
         }
 
         $serviceRequest->load([
-            'client:id,name,avatar',
-            'worker.user:id,name,avatar',
+            'client:id,name,avatar,email',
+            'worker.user:id,name,avatar,email',
             'category:id,display_name,color,slug',
         ]);
 
@@ -694,11 +716,13 @@ class ServiceRequestController extends Controller
                     'id' => $serviceRequest->client->id,
                     'name' => $serviceRequest->client->name,
                     'avatar' => $serviceRequest->client->avatar,
+                    'email' => $serviceRequest->client->email,
                 ] : null,
                 'worker' => $serviceRequest->worker ? [
                     'id' => $serviceRequest->worker->id,
                     'name' => $serviceRequest->worker->user->name ?? 'Sin nombre',
                     'avatar' => $serviceRequest->worker->user->avatar ?? null,
+                    'email' => $serviceRequest->worker->user->email ?? null,
                 ] : null,
                 'category' => $serviceRequest->category ? [
                     'id' => $serviceRequest->category->id,

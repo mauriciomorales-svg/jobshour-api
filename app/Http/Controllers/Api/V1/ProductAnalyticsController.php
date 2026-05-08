@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\ProductAnalyticsEvent;
 use App\Models\User;
+use App\Models\Worker;
 use App\Support\AdminGate;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
@@ -24,6 +25,96 @@ use Laravel\Sanctum\PersonalAccessToken;
  */
 class ProductAnalyticsController extends Controller
 {
+    public function workerMarketingSummary(Request $request, int $workerId)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['error' => 'unauthorized'], 401);
+        }
+
+        $ownsWorker = Worker::query()
+            ->where('id', $workerId)
+            ->where('user_id', $user->id)
+            ->exists();
+        if (! $ownsWorker) {
+            return response()->json(['error' => 'forbidden'], 403);
+        }
+
+        $days = max(1, min((int) $request->query('days', 30), 90));
+        $since = now()->subDays($days)->startOfDay();
+
+        $base = DB::table('product_analytics_events')
+            ->where('created_at', '>=', $since)
+            ->whereRaw("COALESCE(payload->>'workerId', payload->>'worker_id') = ?", [(string) $workerId]);
+
+        $totalsByName = (clone $base)
+            ->select('name')
+            ->selectRaw('COUNT(*)::int as total')
+            ->groupBy('name')
+            ->pluck('total', 'name');
+
+        $views = (int) ($totalsByName['product_view_shared'] ?? 0);
+        $shares = (int) ($totalsByName['share_click'] ?? 0);
+        $whatsapp = (int) ($totalsByName['whatsapp_share'] ?? 0);
+        $pdf = (int) ($totalsByName['pdf_download'] ?? 0);
+        $checkouts = (int) ($totalsByName['checkout_from_share'] ?? 0);
+
+        $dailyRows = (clone $base)
+            ->whereIn('name', ['product_view_shared', 'share_click', 'whatsapp_share', 'pdf_download', 'checkout_from_share'])
+            ->selectRaw("DATE(created_at) as day")
+            ->selectRaw("COUNT(*) FILTER (WHERE name = 'product_view_shared')::int as views")
+            ->selectRaw("COUNT(*) FILTER (WHERE name = 'share_click')::int as shares")
+            ->selectRaw("COUNT(*) FILTER (WHERE name = 'whatsapp_share')::int as whatsapp")
+            ->selectRaw("COUNT(*) FILTER (WHERE name = 'pdf_download')::int as pdf")
+            ->selectRaw("COUNT(*) FILTER (WHERE name = 'checkout_from_share')::int as checkouts")
+            ->groupBy('day')
+            ->orderBy('day')
+            ->get();
+
+        $topProducts = (clone $base)
+            ->whereIn('name', ['product_view_shared', 'share_click', 'whatsapp_share', 'pdf_download', 'checkout_from_share'])
+            ->selectRaw("COALESCE(payload->>'productId', payload->>'product_id') as product_id_raw")
+            ->selectRaw('COUNT(*)::int as touches')
+            ->whereRaw("COALESCE(payload->>'productId', payload->>'product_id') IS NOT NULL")
+            ->groupBy('product_id_raw')
+            ->orderByDesc('touches')
+            ->limit(8)
+            ->get()
+            ->map(fn ($row) => [
+                'product_id' => (int) $row->product_id_raw,
+                'touches' => (int) $row->touches,
+            ]);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'worker_id' => $workerId,
+                'window_days' => $days,
+                'since' => $since->toIso8601String(),
+                'totals' => [
+                    'views' => $views,
+                    'shares' => $shares,
+                    'whatsapp' => $whatsapp,
+                    'pdf' => $pdf,
+                    'checkouts' => $checkouts,
+                ],
+                'conversion' => [
+                    'share_to_checkout_rate' => $shares > 0 ? round($checkouts / $shares, 4) : 0,
+                    'view_to_checkout_rate' => $views > 0 ? round($checkouts / $views, 4) : 0,
+                ],
+                'daily' => $dailyRows->map(fn ($row) => [
+                    'day' => (string) $row->day,
+                    'views' => (int) $row->views,
+                    'shares' => (int) $row->shares,
+                    'whatsapp' => (int) $row->whatsapp,
+                    'pdf' => (int) $row->pdf,
+                    'checkouts' => (int) $row->checkouts,
+                ]),
+                'top_products' => $topProducts,
+            ],
+        ]);
+    }
+
     public function adminSummary(Request $request)
     {
         AdminGate::assert($request);

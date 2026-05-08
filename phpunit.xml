@@ -22,6 +22,9 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="BROADCAST_DRIVER" value="null"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
+        <!-- Evita MAIL_MAILER=resend del .env (falta resend/resend-php). No uses solo .env.testing con MAIL_MAILER:
+             Laravel con APP_ENV=testing carga ÚNICAMENTE .env.testing y dejaría sin DB_* del .env principal. -->
+        <env name="MAIL_MAILER" value="array"/>
         <!-- DB: usar el mismo .env que el proyecto (evita puerto fijo incorrecto). Para CI, definir variables en el workflow. -->
     </php>
 </phpunit>
