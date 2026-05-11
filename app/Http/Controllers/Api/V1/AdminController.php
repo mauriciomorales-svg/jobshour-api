@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
-use App\Models\ServiceRequest;
 use App\Models\Category;
+use App\Models\MpWebhookEvent;
+use App\Models\ServiceRequest;
+use App\Models\User;
+use App\Models\WaitlistEntry;
+use App\Models\Worker;
 use App\Support\AdminGate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -191,5 +194,120 @@ class AdminController extends Controller
         $cats = Category::withCount(['workers', 'serviceRequests'])->orderBy('display_name')->get();
 
         return response()->json($cats);
+    }
+
+    /**
+     * Últimas transacciones procesadas por webhooks MP
+     */
+    public function transactions(Request $request)
+    {
+        $this->assertAdmin($request);
+
+        $events = MpWebhookEvent::orderBy('created_at', 'desc')
+            ->limit(50)
+            ->get(['id', 'mp_payment_id', 'event_type', 'external_reference', 'mp_status', 'result', 'created_at']);
+
+        // Enriquecer con monto real si está disponible en service_requests
+        $srIds = $events->where('event_type', 'service_payment')
+            ->map(fn($e) => is_numeric($e->external_reference) ? (int)$e->external_reference : null)
+            ->filter()->values();
+
+        $srPrices = ServiceRequest::whereIn('id', $srIds)->pluck('offered_price', 'id');
+
+        $enriched = $events->map(function ($e) use ($srPrices) {
+            $row = $e->toArray();
+            if ($e->event_type === 'service_payment' && is_numeric($e->external_reference)) {
+                $row['amount_clp'] = $srPrices[(int)$e->external_reference] ?? null;
+            }
+            return $row;
+        });
+
+        return response()->json([
+            'total' => MpWebhookEvent::count(),
+            'approved_today' => MpWebhookEvent::where('mp_status', 'approved')
+                ->whereDate('created_at', today())->count(),
+            'data' => $enriched,
+        ]);
+    }
+
+    /**
+     * Lista de espera (zonas sin cobertura)
+     */
+    public function waitlist(Request $request)
+    {
+        $this->assertAdmin($request);
+
+        $entries = WaitlistEntry::orderBy('created_at', 'desc')
+            ->limit(100)
+            ->get(['id', 'email', 'phone', 'lat', 'lng', 'notified', 'created_at']);
+
+        return response()->json([
+            'total' => WaitlistEntry::count(),
+            'not_notified' => WaitlistEntry::where('notified', false)->count(),
+            'data' => $entries,
+        ]);
+    }
+
+    /**
+     * Crear demanda en nombre de un cliente (modo fundador intermediario)
+     */
+    public function createDemandForClient(Request $request)
+    {
+        $this->assertAdmin($request);
+
+        $data = $request->validate([
+            'description'  => 'required|string|max:500',
+            'category_id'  => 'required|integer|exists:categories,id',
+            'offered_price'=> 'nullable|numeric|min:0',
+            'lat'          => 'required|numeric|between:-90,90',
+            'lng'          => 'required|numeric|between:-180,180',
+            'client_name'  => 'nullable|string|max:100',
+            'client_phone' => 'nullable|string|max:32',
+            'urgency'      => 'nullable|in:normal,urgent',
+        ]);
+
+        // Usar el usuario admin como client_id temporal (placeholder)
+        $adminUser = $request->user();
+
+        $sr = ServiceRequest::create([
+            'client_id'     => $adminUser->id,
+            'category_id'   => $data['category_id'],
+            'description'   => $data['description'] . ($data['client_name'] ? "\n\n[Cliente: {$data['client_name']}]" : ''),
+            'offered_price' => $data['offered_price'] ?? 0,
+            'lat'           => $data['lat'],
+            'lng'           => $data['lng'],
+            'status'        => 'pending',
+            'type'          => 'map_take',
+            'urgency'       => $data['urgency'] ?? 'normal',
+            'source'        => 'admin_manual',
+            'expires_at'    => now()->addHours(24),
+        ]);
+
+        return response()->json([
+            'status' => 'ok',
+            'demand_id' => $sr->id,
+            'message'   => "Demanda #{$sr->id} creada. Avisa al cliente por WhatsApp que su pedido está publicado.",
+        ]);
+    }
+
+    /**
+     * Workers activos ahora mismo
+     */
+    public function activeWorkers(Request $request)
+    {
+        $this->assertAdmin($request);
+
+        $workers = Worker::with('user:id,name,email,phone')
+            ->where('availability_status', 'active')
+            ->whereNotNull('lat')
+            ->whereNotNull('lng')
+            ->limit(50)
+            ->get(['id', 'user_id', 'availability_status', 'lat', 'lng', 'updated_at']);
+
+        return response()->json([
+            'active_count' => $workers->count(),
+            'intermediate_count' => Worker::where('availability_status', 'intermediate')->count(),
+            'data' => $workers,
+        ]);
     }
 }

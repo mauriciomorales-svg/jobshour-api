@@ -284,7 +284,11 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('/demands', [AdminController::class, 'demands']);
         Route::post('/demands/{id}/cancel', [AdminController::class, 'cancelDemand']);
         Route::post('/demands/{id}/boost', [AdminController::class, 'boostDemand']);
+        Route::post('/demands/create-for-client', [AdminController::class, 'createDemandForClient']);
         Route::get('/categories', [AdminController::class, 'categories']);
+        Route::get('/transactions', [AdminController::class, 'transactions']);
+        Route::get('/waitlist', [AdminController::class, 'waitlist']);
+        Route::get('/active-workers', [AdminController::class, 'activeWorkers']);
     });
 });
 
