@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\ServiceRequest;
 use App\Models\Worker;
+use App\Support\JobshourSla;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -426,7 +427,7 @@ class DemandMapController extends Controller
                     'urgency' => $publicDemand->urgency ?? 'normal',
                     'offered_price' => $publicDemand->offered_price,
                     'status' => 'pending',
-                    'expires_at' => now()->addMinutes(5),
+                    'expires_at' => JobshourSla::mapTakeExpiresAt(),
                     'payload' => $publicDemand->payload,
                 ]);
 
@@ -444,10 +445,13 @@ class DemandMapController extends Controller
                 }
             });
 
+            $newRequest->load(['client:id,name,avatar', 'category:id,display_name,color']);
+            $acceptHuman = JobshourSla::describeSeconds(JobshourSla::mapTakeAcceptSeconds());
+
             return response()->json([
                 'status' => 'success',
-                'message' => '✅ Has tomado esta demanda. El cliente tiene 5 minutos para confirmar.',
-                'data' => $newRequest->load(['client:id,name,avatar', 'category:id,display_name,color']),
+                'message' => "✅ Has tomado esta demanda. Tienes {$acceptHuman} para pulsar Aceptar en Mis solicitudes.",
+                'data' => $newRequest,
             ], 201);
         } catch (\Exception $e) {
             return response()->json([
@@ -541,7 +545,7 @@ class DemandMapController extends Controller
                     'urgency' => $publicDemand->urgency ?? 'normal',
                     'offered_price' => $publicDemand->offered_price,
                     'status' => 'pending',
-                    'expires_at' => now()->addMinutes(5),
+                    'expires_at' => JobshourSla::mapTakeExpiresAt(),
                     'payload' => $publicDemand->payload,
                     'pickup_address' => $publicDemand->pickup_address,
                     'delivery_address' => $publicDemand->delivery_address,
@@ -587,10 +591,13 @@ class DemandMapController extends Controller
                 ]);
             }
 
+            $newRequest->load(['client:id,name,avatar', 'category:id,display_name,color']);
+            $acceptHuman = JobshourSla::describeSeconds(JobshourSla::mapTakeAcceptSeconds());
+
             return response()->json([
                 'status' => 'success',
-                'message' => '✅ Has tomado esta demanda. El cliente tiene 5 minutos para confirmar.',
-                'data' => $newRequest->load(['client:id,name,avatar', 'category:id,display_name,color']),
+                'message' => "✅ Has tomado esta demanda. Tienes {$acceptHuman} para pulsar Aceptar en Mis solicitudes.",
+                'data' => $newRequest,
             ], 201);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('DemandMapController::take - Error crítico', [

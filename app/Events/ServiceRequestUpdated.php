@@ -122,6 +122,27 @@ class ServiceRequestUpdated implements ShouldBroadcastNow
                     } catch (\Throwable $e) {
                         Log::warning('[Push] FCM to client failed (non-critical)', ['error' => $e->getMessage()]);
                     }
+                } elseif ($status === 'cancelled' && $this->serviceRequest->cancellation_reason === 'auto_expired_worker_accept_window') {
+                    try {
+                        $result = $firebase->sendToDevice(
+                            $client->fcm_token,
+                            'Sin confirmación a tiempo',
+                            ($this->serviceRequest->worker?->user?->name ?? 'El profesional')
+                                . ' no aceptó la solicitud dentro del plazo. Podés volver a intentar o publicar de nuevo.',
+                            [
+                                'type' => 'request_auto_expired_accept',
+                                'request_id' => (string) $this->serviceRequest->id,
+                                'cancellation_reason' => 'auto_expired_worker_accept_window',
+                            ]
+                        );
+                        if ($result) {
+                            Log::info('[Push] FCM sent to client (auto-expired accept window)');
+                        } else {
+                            Log::warning('[Push] FCM to client returned false (auto-expired accept window)');
+                        }
+                    } catch (\Throwable $e) {
+                        Log::warning('[Push] FCM to client failed (auto-expired, non-critical)', ['error' => $e->getMessage()]);
+                    }
                 }
             } else {
                 Log::warning('[Push] Client has no FCM token', ['client_id' => $this->serviceRequest->client_id]);
@@ -134,17 +155,28 @@ class ServiceRequestUpdated implements ShouldBroadcastNow
                 
                 if ($status === 'cancelled') {
                     try {
+                        $isAutoAcceptTimeout = $this->serviceRequest->cancellation_reason === 'auto_expired_worker_accept_window';
+                        if ($isAutoAcceptTimeout) {
+                            $title = 'Plazo para aceptar vencido';
+                            $body = 'La solicitud se cerró sola porque no pulsaste Aceptar a tiempo. Revisa Mis solicitudes si querés retomar otra oportunidad.';
+                            $type = 'request_auto_expired_accept';
+                        } else {
+                            $title = 'Solicitud cancelada';
+                            $body = ($this->serviceRequest->client?->name ?? 'Cliente') . ' canceló la solicitud';
+                            $type = 'request_cancelled';
+                        }
                         $result = $firebase->sendToDevice(
                             $worker->user->fcm_token,
-                            'Solicitud cancelada',
-                            ($this->serviceRequest->client?->name ?? 'Cliente') . ' canceló la solicitud',
+                            $title,
+                            $body,
                             [
-                                'type' => 'request_cancelled',
-                                'request_id' => (string)$this->serviceRequest->id,
+                                'type' => $type,
+                                'request_id' => (string) $this->serviceRequest->id,
+                                'cancellation_reason' => (string) ($this->serviceRequest->cancellation_reason ?? ''),
                             ]
                         );
                         if ($result) {
-                            Log::info('[Push] FCM sent to worker (cancelled)');
+                            Log::info('[Push] FCM sent to worker (cancelled)', ['auto_timeout' => $isAutoAcceptTimeout]);
                         } else {
                             Log::warning('[Push] FCM to worker returned false (cancelled)');
                         }

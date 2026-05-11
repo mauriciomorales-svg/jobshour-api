@@ -11,6 +11,7 @@ use App\Models\IntegratedQuote;
 use App\Models\ServiceRequest;
 use App\Models\Worker;
 use App\Models\Message;
+use App\Support\JobshourSla;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -109,7 +110,7 @@ class ServiceRequestController extends Controller
                     'urgency' => $validated['urgency'] ?? 'normal',
                     'offered_price' => $validated['offered_price'] ?? null,
                     'status' => 'pending',
-                    'expires_at' => now()->addMinutes(5),
+                    'expires_at' => JobshourSla::directBookingAcceptExpiresAt(),
                     'payload' => !empty($payload) ? $payload : null,
                     'carga_tipo' => $validated['carga_tipo'] ?? null,
                     'carga_peso' => $validated['carga_peso'] ?? null,

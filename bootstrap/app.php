@@ -51,5 +51,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('retention:push-worker-availability')
             ->weeklyOn(3, '10:30')
             ->withoutOverlapping();
+
+        $schedule->command('jobshour:expire-pending-accept')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->runInBackground();
     })
     ->create();
