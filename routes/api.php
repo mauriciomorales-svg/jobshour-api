@@ -230,6 +230,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::post('/worker/video', [WorkerMediaController::class, 'uploadVideo']);
     Route::delete('/worker/video', [WorkerMediaController::class, 'deleteVideo']);
     Route::post('/worker/categories', [WorkerMediaController::class, 'updateCategories']);
+    Route::put('/worker/social-links', [WorkerMediaController::class, 'updateSocialLinks']);
     Route::get('/worker/me', [WorkerMediaController::class, 'getWorkerData']);
     
     // Worker Experiences

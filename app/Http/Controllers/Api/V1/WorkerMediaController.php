@@ -230,7 +230,43 @@ class WorkerMediaController extends Controller
                 ]),
                 'is_seller' => (bool) $worker->is_seller,
                 'store_name' => $worker->store_name,
+                'social_links' => $worker->social_links ?? [],
             ],
+        ]);
+    }
+
+    /**
+     * PUT /api/v1/worker/social-links
+     * Guarda hasta 8 links de redes/portfolio del worker.
+     * Cada item: { platform: string, label: string, url: string }
+     */
+    public function updateSocialLinks(Request $request)
+    {
+        $validated = $request->validate([
+            'links'               => 'required|array|max:8',
+            'links.*.platform'    => 'required|string|max:30',
+            'links.*.label'       => 'nullable|string|max:60',
+            'links.*.url'         => 'required|url|max:500',
+        ]);
+
+        $worker = Worker::where('user_id', $request->user()->id)->first();
+        if (! $worker) {
+            return response()->json(['status' => 'error', 'message' => 'Perfil de trabajador no encontrado'], 404);
+        }
+
+        // Sanitizar: solo guardar platform, label y url
+        $clean = collect($validated['links'])->map(fn ($l) => [
+            'platform' => strtolower(trim($l['platform'])),
+            'label'    => trim($l['label'] ?? ''),
+            'url'      => trim($l['url']),
+        ])->values()->all();
+
+        $worker->social_links = $clean;
+        $worker->save();
+
+        return response()->json([
+            'status' => 'success',
+            'links'  => $worker->social_links,
         ]);
     }
 

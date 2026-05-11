@@ -31,10 +31,12 @@ class Worker extends Model
         'is_verified',
         'is_seller',
         'store_name',
+        'social_links',
     ];
 
     protected $casts = [
         'skills' => 'array',
+        'social_links' => 'array',
         'service_area' => 'array',
         'active_route' => 'array',
         'is_verified' => 'boolean',

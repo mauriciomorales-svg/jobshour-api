@@ -30,9 +30,11 @@ class WorkerController extends Controller
 
     public function show(Worker $worker)
     {
-        return response()->json($worker->load(['user', 'videos' => function ($q) {
-            $q->where('status', 'ready')->orderBy('created_at', 'desc');
-        }]));
+        return response()->json($worker->load([
+            'user',
+            'categories',
+            'videos' => fn ($q) => $q->where('status', 'ready')->orderBy('created_at', 'desc'),
+        ]));
     }
 
     public function store(Request $request)

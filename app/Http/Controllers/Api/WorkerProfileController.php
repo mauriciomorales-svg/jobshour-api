@@ -34,6 +34,7 @@ class WorkerProfileController extends Controller
         return response()->json([
             'worker' => $worker,
             'skills' => $worker->skills ?? [],
+            'social_links' => $worker->social_links ?? [],
             'cv_url' => $worker->cv_url,
             'cv_filename' => $worker->cv_filename,
             'showcase_video' => $worker->showcaseVideo,
@@ -385,6 +386,7 @@ class WorkerProfileController extends Controller
         return response()->json([
             'worker' => $worker,
             'skills' => $worker->skills ?? [],
+            'social_links' => $worker->social_links ?? [],
             'cv_url' => $worker->cv_url,
             'cv_filename' => $worker->cv_filename,
             'showcase_video' => $worker->showcaseVideo,
