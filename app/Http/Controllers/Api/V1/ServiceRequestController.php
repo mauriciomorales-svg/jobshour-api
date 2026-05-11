@@ -555,8 +555,23 @@ class ServiceRequestController extends Controller
         }
 
         $event = new ServiceRequestUpdated($serviceRequest);
-        broadcast($event);
-        $event->handle();
+        try {
+            broadcast($event);
+        } catch (\Throwable $e) {
+            \Log::warning('ServiceRequestController::cancel - broadcast failed (non-critical)', [
+                'request_id' => $serviceRequest->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $event->handle();
+        } catch (\Throwable $e) {
+            \Log::warning('ServiceRequestController::cancel - handle failed (non-critical)', [
+                'request_id' => $serviceRequest->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return response()->json([
             'status' => 'success',
@@ -700,6 +715,10 @@ class ServiceRequestController extends Controller
             'category:id,display_name,color,slug',
         ]);
 
+        $adjustmentPending = (bool) ($serviceRequest->adjusted_price && ! $serviceRequest->client_approved_adjustment);
+        $baseForMp = $serviceRequest->mercadoPagoBasePriceClp();
+        $mpTotal = (int) round($baseForMp * 1.08);
+
         return response()->json([
             'status' => 'success',
             'data' => [
@@ -709,6 +728,10 @@ class ServiceRequestController extends Controller
                 'urgency' => $serviceRequest->urgency,
                 'offered_price' => $serviceRequest->offered_price,
                 'final_price' => $serviceRequest->final_price,
+                'adjusted_price' => $serviceRequest->adjusted_price,
+                'client_approved_adjustment' => (bool) $serviceRequest->client_approved_adjustment,
+                'price_adjustment_reason' => $serviceRequest->price_adjustment_reason,
+                'payment_status' => $serviceRequest->payment_status,
                 'created_at' => $serviceRequest->created_at,
                 'accepted_at' => $serviceRequest->accepted_at,
                 'completed_at' => $serviceRequest->completed_at,
@@ -742,6 +765,18 @@ class ServiceRequestController extends Controller
                 'type' => $serviceRequest->type,
                 'category_type' => $serviceRequest->category_type,
                 'payload' => $serviceRequest->payload,
+                /** Resumen único para chat y cobro MP (misma lógica que create-link). */
+                'pricing' => [
+                    'agreed_base_clp' => $serviceRequest->negotiatedBasePriceClp(),
+                    'base_used_for_mp_clp' => $baseForMp,
+                    'mp_total_clp' => $mpTotal,
+                    'mp_factor' => 1.08,
+                    'source' => $serviceRequest->mercadoPagoPricingSource(),
+                    'adjustment_pending' => $adjustmentPending,
+                    'proposed_adjusted_clp' => $adjustmentPending
+                        ? (float) $serviceRequest->adjusted_price
+                        : null,
+                ],
             ],
         ]);
     }

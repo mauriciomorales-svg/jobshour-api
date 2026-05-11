@@ -19,10 +19,18 @@ class ServiceRequestUpdated implements ShouldBroadcastNow
 
     public function broadcastOn(): array
     {
-        return [
-            new PrivateChannel('worker.' . $this->serviceRequest->worker->user_id),
+        // La demanda puede estar "pending" y todavía no tener worker asignado.
+        // En ese caso, el canal worker.* no existe y no debemos romper el broadcast.
+        $channels = [
             new PrivateChannel('user.' . $this->serviceRequest->client_id),
         ];
+
+        $workerUserId = $this->serviceRequest->worker?->user_id;
+        if ($workerUserId) {
+            $channels[] = new PrivateChannel('worker.' . $workerUserId);
+        }
+
+        return $channels;
     }
 
     public function broadcastAs(): string
