@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\MpWebhookEvent;
 use App\Models\ServiceRequest;
 use App\Services\FCMService;
 use Illuminate\Http\Request;
@@ -647,6 +648,18 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'not_found']);
         }
 
+        // Idempotencia: ignorar si ya procesamos este pago
+        $isNew = MpWebhookEvent::record(
+            (string) $payment['id'],
+            'service_payment',
+            (string) ($payment['status'] ?? ''),
+            $extRef
+        );
+        if (! $isNew) {
+            Log::info('[MP] Webhook service_payment ya procesado (idempotente)', ['mp_id' => $payment['id']]);
+            return response()->json(['status' => 'already_processed']);
+        }
+
         $serviceRequest->update(['mp_status' => $payment['status']]);
 
         if ($payment['status'] === 'authorized') {
@@ -679,6 +692,18 @@ class MercadoPagoController extends Controller
         $sr = ServiceRequest::find($srId);
         if (! $sr) {
             return response()->json(['status' => 'not_found']);
+        }
+
+        // Idempotencia: solo aplicar boost una vez por pago
+        $isNew = MpWebhookEvent::record(
+            (string) ($payment['id'] ?? 'unknown'),
+            'boost',
+            (string) ($payment['status'] ?? ''),
+            $extRef
+        );
+        if (! $isNew) {
+            Log::info('[MP] Boost ya procesado (idempotente)', ['sr' => $srId, 'mp_id' => $payment['id'] ?? null]);
+            return response()->json(['status' => 'already_processed']);
         }
 
         $meta = isset($payment['metadata']) && is_array($payment['metadata']) ? $payment['metadata'] : [];
@@ -727,6 +752,18 @@ class MercadoPagoController extends Controller
         if (! in_array($status, ['approved', 'authorized'], true)) {
             Log::info('[MP] Credits webhook sin aprobación aún', ['status' => $status, 'ref' => $extRef]);
             return response()->json(['status' => 'ok_credits_pending']);
+        }
+
+        // Idempotencia: solo acreditar créditos una vez por pago
+        $isNew = MpWebhookEvent::record(
+            (string) ($payment['id'] ?? 'unknown'),
+            'credits',
+            $status,
+            $extRef
+        );
+        if (! $isNew) {
+            Log::info('[MP] Credits ya procesado (idempotente)', ['user_id' => $userId, 'mp_id' => $payment['id'] ?? null]);
+            return response()->json(['status' => 'already_processed']);
         }
 
         $packs = collect(config('services.credits.packs', []));

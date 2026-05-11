@@ -44,6 +44,10 @@ Route::get('/login', function () {
     return response()->json(['message' => 'Unauthenticated.'], 401);
 })->name('login');
 
+// Lista de espera: pública, sin autenticación
+Route::post('/v1/waitlist', [\App\Http\Controllers\Api\WaitlistController::class, 'store'])
+    ->middleware('throttle:20,1'); // max 20 registros por minuto por IP
+
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth');
 Route::post('/auth/verify-email', [AuthController::class, 'verifyEmail'])->middleware('throttle:auth');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth');
