@@ -96,6 +96,9 @@ class MercadoPagoController extends Controller
             'offered_price' => $serviceRequest->offered_price,
         ]);
         $clientEmail = $serviceRequest->client->email ?? 'cliente@jobshours.com';
+        $frontend = rtrim((string) config('app.frontend_url', config('app.url')), '/');
+        $resultBase = $frontend . '/pago/resultado';
+        $resultQuery = 'service_request_id=' . $serviceRequest->id;
 
         $payload = [
             'items' => [[
@@ -105,18 +108,20 @@ class MercadoPagoController extends Controller
                 'unit_price'  => (float) $amount,
                 'currency_id' => 'CLP',
             ]],
-            'payer' => ['email' => $clientEmail],
             'external_reference' => (string) $serviceRequest->id,
             'notification_url'   => config('app.url') . '/api/v1/payments/mp/webhook',
             'back_urls' => [
-                'success' => config('app.url') . '/payment/success',
-                'failure' => config('app.url') . '/payment/failure',
-                'pending' => config('app.url') . '/payment/pending',
+                'success' => $resultBase . '?status=success&' . $resultQuery,
+                'failure' => $resultBase . '?status=failure&' . $resultQuery,
+                'pending' => $resultBase . '?status=pending&' . $resultQuery,
             ],
             'auto_return' => 'approved',
             'statement_descriptor' => 'JobsHours',
             'metadata' => ['service_request_id' => $serviceRequest->id],
         ];
+        if (is_string($clientEmail) && filter_var($clientEmail, FILTER_VALIDATE_EMAIL)) {
+            $payload['payer'] = ['email' => $clientEmail];
+        }
 
         $response = Http::withToken($this->accessToken)
             ->post("{$this->baseUrl}/checkout/preferences", $payload);
