@@ -206,6 +206,7 @@ class DashboardController extends Controller
             'recurrence' => $sr->recurrence ?? 'once',
             'recurrence_days' => $sr->recurrence_days,
             'payload' => $sr->payload ?? [],
+            'boosted_until' => $sr->boosted_until?->toIso8601String(),
         ];
 
         // El payload ya está incluido completo en $base, no necesitamos procesarlo

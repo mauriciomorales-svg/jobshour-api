@@ -39,6 +39,19 @@ return [
         'default_hours' => (int) env('BOOST_DEMAND_HOURS', 24),
     ],
 
+    /**
+     * Paquetes de créditos para ver teléfono de trabajadores.
+     * Precio en CLP; créditos que se acreditan al usuario.
+     * Se puede sobreescribir con CREDITS_PACKS_JSON='[{"id":"pack5",...}]'.
+     */
+    'credits' => [
+        'packs' => json_decode((string) env('CREDITS_PACKS_JSON', ''), true) ?: [
+            ['id' => 'pack5',  'credits' => 5,  'price_clp' => 1490, 'label' => '5 contactos'],
+            ['id' => 'pack15', 'credits' => 15, 'price_clp' => 3490, 'label' => '15 contactos — más popular'],
+            ['id' => 'pack30', 'credits' => 30, 'price_clp' => 5990, 'label' => '30 contactos — mejor valor'],
+        ],
+    ],
+
     /** NULL de ip/user_agent en analytics pasados N días (analytics:anonymize-pii). */
     'pii' => [
         'anonymize_after_days' => (int) env('ANALYTICS_PII_ANONYMIZE_AFTER_DAYS', 90),

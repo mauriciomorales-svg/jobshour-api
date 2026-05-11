@@ -195,6 +195,8 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/payments/mp/brick-config', [\App\Http\Controllers\Api\MercadoPagoController::class, 'brickConfig']);
     Route::post('/payments/mp/create-link', [\App\Http\Controllers\Api\MercadoPagoController::class, 'createPaymentLink']);
     Route::post('/payments/mp/demand-boost', [\App\Http\Controllers\Api\MercadoPagoController::class, 'createDemandBoostCheckout']);
+    Route::get('/payments/mp/credits-packs', [\App\Http\Controllers\Api\MercadoPagoController::class, 'creditsPacks']);
+    Route::post('/payments/mp/credits-checkout', [\App\Http\Controllers\Api\MercadoPagoController::class, 'createCreditsCheckout']);
     Route::post('/payments/mp/process', [\App\Http\Controllers\Api\MercadoPagoController::class, 'processPayment']);
     Route::post('/payments/mp/capture/{serviceRequestId}', [\App\Http\Controllers\Api\MercadoPagoController::class, 'capturePayment']);
     

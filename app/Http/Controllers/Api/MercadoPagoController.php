@@ -493,6 +493,93 @@ class MercadoPagoController extends Controller
     }
 
     /**
+     * GET /api/v1/payments/mp/credits-packs
+     * Devuelve los paquetes de créditos disponibles.
+     */
+    public function creditsPacks(): \Illuminate\Http\JsonResponse
+    {
+        return response()->json([
+            'status' => 'success',
+            'packs' => config('services.credits.packs', []),
+        ]);
+    }
+
+    /**
+     * POST /api/v1/payments/mp/credits-checkout
+     * Crea preferencia MP para comprar un paquete de créditos.
+     * Body: { pack_id: 'pack15' }
+     */
+    public function createCreditsCheckout(Request $request): \Illuminate\Http\JsonResponse
+    {
+        if (trim($this->accessToken) === '') {
+            return response()->json(['status' => 'error', 'message' => 'Mercado Pago no configurado'], 503);
+        }
+
+        $validated = $request->validate([
+            'pack_id' => 'required|string|max:32',
+        ]);
+
+        $packs = collect(config('services.credits.packs', []));
+        $pack = $packs->firstWhere('id', $validated['pack_id']);
+
+        if (! $pack) {
+            return response()->json(['status' => 'error', 'message' => 'Paquete no encontrado'], 422);
+        }
+
+        $user = auth()->user();
+        $frontend = rtrim((string) config('app.frontend_url', config('app.url')), '/');
+
+        $payload = [
+            'items' => [[
+                'id'          => 'credits-' . $pack['id'],
+                'title'       => 'JobsHours – ' . $pack['label'],
+                'quantity'    => 1,
+                'unit_price'  => (float) $pack['price_clp'],
+                'currency_id' => 'CLP',
+            ]],
+            'external_reference' => 'credits:' . $user->id . ':' . $pack['id'],
+            'notification_url'   => rtrim((string) config('app.url'), '/') . '/api/v1/payments/mp/webhook',
+            'back_urls' => [
+                'success' => $frontend . '/?credits=ok&pack=' . $pack['id'],
+                'failure' => $frontend . '/?credits=fail',
+                'pending' => $frontend . '/?credits=pending',
+            ],
+            'auto_return'          => 'approved',
+            'statement_descriptor' => 'JH CREDITOS',
+            'metadata' => [
+                'type'       => 'credits_purchase',
+                'user_id'    => $user->id,
+                'pack_id'    => $pack['id'],
+                'credits'    => $pack['credits'],
+            ],
+        ];
+
+        if (filter_var($user->email ?? '', FILTER_VALIDATE_EMAIL)) {
+            $payload['payer'] = ['email' => $user->email];
+        }
+
+        $response = Http::withToken($this->accessToken)
+            ->post("{$this->baseUrl}/checkout/preferences", $payload);
+
+        if (! $response->successful()) {
+            Log::error('[MP] Error preferencia créditos', ['body' => $response->json()]);
+            return response()->json(['status' => 'error', 'message' => 'No se pudo iniciar el pago'], 500);
+        }
+
+        $data = $response->json();
+        $initPoint = config('app.env') === 'production'
+            ? ($data['init_point'] ?? '')
+            : ($data['sandbox_init_point'] ?? $data['init_point'] ?? '');
+
+        return response()->json([
+            'status'        => 'success',
+            'link'          => $initPoint,
+            'preference_id' => $data['id'] ?? null,
+            'pack'          => $pack,
+        ]);
+    }
+
+    /**
      * Clave pública para el Payment Brick (dato no secreto; evita duplicar NEXT_PUBLIC_MP_PUBLIC_KEY en el front).
      */
     public function brickConfig(): \Illuminate\Http\JsonResponse
@@ -544,6 +631,9 @@ class MercadoPagoController extends Controller
         $extRef = (string) ($payment['external_reference'] ?? '');
         if (str_starts_with($extRef, 'boost:')) {
             return $this->applyDemandBoostFromPayment($payment, $extRef);
+        }
+        if (str_starts_with($extRef, 'credits:')) {
+            return $this->applyCreditsFromPayment($payment, $extRef);
         }
 
         $serviceRequestId = is_numeric($extRef) ? (int) $extRef : null;
@@ -609,5 +699,66 @@ class MercadoPagoController extends Controller
         $sr->save();
 
         return response()->json(['status' => 'ok_boost']);
+    }
+
+    /**
+     * Acredita créditos al usuario cuando el pago es aprobado.
+     * external_reference = 'credits:{userId}:{packId}'
+     *
+     * @param  array<string,mixed>  $payment
+     */
+    private function applyCreditsFromPayment(array $payment, string $extRef): \Illuminate\Http\JsonResponse
+    {
+        // credits:42:pack15  →  ['credits', '42', 'pack15']
+        $parts = explode(':', $extRef, 3);
+        if (count($parts) < 3) {
+            Log::warning('[MP] credits: extRef malformado', ['ref' => $extRef]);
+            return response()->json(['status' => 'bad_credits_ref']);
+        }
+
+        [, $userId, $packId] = $parts;
+        $userId = (int) $userId;
+
+        if ($userId < 1 || $packId === '') {
+            return response()->json(['status' => 'bad_credits_ref']);
+        }
+
+        $status = $payment['status'] ?? '';
+        if (! in_array($status, ['approved', 'authorized'], true)) {
+            Log::info('[MP] Credits webhook sin aprobación aún', ['status' => $status, 'ref' => $extRef]);
+            return response()->json(['status' => 'ok_credits_pending']);
+        }
+
+        $packs = collect(config('services.credits.packs', []));
+        $pack  = $packs->firstWhere('id', $packId);
+        $creditsToAdd = $pack ? (int) $pack['credits'] : 0;
+
+        // Si vienen en metadata (más fiable ante cambios de config)
+        $meta = isset($payment['metadata']) && is_array($payment['metadata']) ? $payment['metadata'] : [];
+        if (isset($meta['credits']) && (int) $meta['credits'] > 0) {
+            $creditsToAdd = (int) $meta['credits'];
+        }
+
+        if ($creditsToAdd < 1) {
+            Log::warning('[MP] credits: pack no encontrado o 0 créditos', ['pack_id' => $packId]);
+            return response()->json(['status' => 'unknown_pack']);
+        }
+
+        $user = \App\Models\User::find($userId);
+        if (! $user) {
+            Log::warning('[MP] credits: usuario no encontrado', ['user_id' => $userId]);
+            return response()->json(['status' => 'user_not_found']);
+        }
+
+        $user->increment('credits_balance', $creditsToAdd);
+        Log::info('[MP] Créditos acreditados', [
+            'user_id'      => $userId,
+            'pack_id'      => $packId,
+            'credits_added'=> $creditsToAdd,
+            'new_balance'  => $user->fresh()->credits_balance,
+            'mp_payment'   => $payment['id'] ?? null,
+        ]);
+
+        return response()->json(['status' => 'ok_credits']);
     }
 }

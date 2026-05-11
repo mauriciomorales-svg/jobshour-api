@@ -56,5 +56,16 @@ return Application::configure(basePath: dirname(__DIR__))
             ->everyMinute()
             ->withoutOverlapping()
             ->runInBackground();
+
+        // Alerta Slack si Postgres no responde (sencillo: si health devuelve error, log CRITICAL)
+        $schedule->call(function () {
+            try {
+                \Illuminate\Support\Facades\DB::select('SELECT 1');
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::critical('[DB] PostgreSQL unreachable — check connection', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        })->everyFiveMinutes()->name('db-health-check')->withoutOverlapping();
     })
     ->create();
