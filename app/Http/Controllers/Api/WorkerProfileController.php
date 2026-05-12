@@ -298,9 +298,22 @@ class WorkerProfileController extends Controller
 
         $canChargeMore = $avgRating >= 4.5 && $completedJobs >= 10;
 
+        $sumCompletedSinceDays = function (int $days) use ($worker) {
+            $since = now()->subDays($days);
+
+            return (float) (ServiceRequest::where('worker_id', $worker->id)
+                ->where('status', 'completed')
+                ->whereRaw('COALESCE(completed_at, updated_at) >= ?', [$since])
+                ->sum('final_price') ?? 0);
+        };
+
         return response()->json([
             'completed_jobs' => $completedJobs,
             'total_earnings' => (float) $totalEarnings,
+            'earnings_completed_last_7_days' => $sumCompletedSinceDays(7),
+            'earnings_completed_last_30_days' => $sumCompletedSinceDays(30),
+            'earnings_completed_last_90_days' => $sumCompletedSinceDays(90),
+            'metrics_generated_at' => now()->toIso8601String(),
             'average_rating' => round($avgRating, 1),
             'category_rating' => round($categoryRating, 1),
             'category_jobs_count' => $categoryJobsCount,
