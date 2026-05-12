@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\ServiceRequest;
 use App\Models\Worker;
+use App\Support\Geofence;
 use App\Support\JobshourSla;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,8 +29,22 @@ class DemandMapController extends Controller
 
         $lat = $validated['lat'];
         $lng = $validated['lng'];
-        $radius = $validated['radius'] ?? 50;
+        $radius = min((float) ($validated['radius'] ?? 50), Geofence::maxSearchRadiusKm());
         $categoryIds = $validated['categories'] ?? [];
+
+        if (Geofence::enabled() && ! Geofence::isInsideZone((float) $lat, (float) $lng)) {
+            return response()->json([
+                'status' => 'outside_zone',
+                'meta' => [
+                    'center' => ['lat' => $lat, 'lng' => $lng],
+                    'radius_searched' => '0km',
+                    'total_found' => 0,
+                    'outside_zone' => true,
+                    'zone' => Geofence::zoneInfo(),
+                ],
+                'data' => [],
+            ]);
+        }
 
         $query = ServiceRequest::visibleInMap()
             ->with(['client:id,name,avatar', 'worker.user:id,name,avatar', 'category:id,slug,display_name,color'])
@@ -126,6 +141,13 @@ class DemandMapController extends Controller
             ]);
 
             \Log::info('DemandMapController::publish - Validation passed', $validated);
+
+            if (Geofence::enabled() && ! Geofence::isInsideZone((float) $validated['lat'], (float) $validated['lng'])) {
+                return response()->json([
+                    'message' => 'La ubicación está fuera de la zona piloto activa.',
+                    'zone' => Geofence::zoneInfo(),
+                ], 422);
+            }
 
             $user = $request->user();
             $ttl = $validated['ttl_minutes'] ?? 30;
