@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Redis;
 
 class HealthController extends Controller
 {
@@ -61,6 +62,41 @@ class HealthController extends Controller
             }
         } catch (\Throwable $e) {
             $checks['queue'] = 'unknown';
+        }
+
+        // 6. Redis
+        try {
+            Redis::ping();
+            $checks['redis'] = 'ok';
+        } catch (\Throwable $e) {
+            $checks['redis'] = 'fail';
+            $status = 'degraded';
+        }
+
+        // 7. Horizon — proceso vivo
+        try {
+            $horizonStatus = \Artisan::call('horizon:status') === 0
+                ? 'running'
+                : 'stopped';
+            $checks['horizon'] = $horizonStatus;
+        } catch (\Throwable $e) {
+            $checks['horizon'] = 'unknown';
+        }
+
+        // 8. Reverb — TCP check rápido
+        try {
+            $host = config('reverb.servers.reverb.host', '127.0.0.1');
+            $port = (int) config('reverb.servers.reverb.port', 8080);
+            $fp = @fsockopen($host, $port, $errno, $errstr, 1);
+            if ($fp) {
+                fclose($fp);
+                $checks['reverb'] = 'ok';
+            } else {
+                $checks['reverb'] = 'fail';
+                $status = 'degraded';
+            }
+        } catch (\Throwable $e) {
+            $checks['reverb'] = 'unknown';
         }
 
         $httpStatus = $status === 'ok' ? 200 : 503;

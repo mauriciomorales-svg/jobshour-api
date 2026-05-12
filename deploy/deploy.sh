@@ -1,38 +1,93 @@
-#!/bin/bash
-# Deploy completo para JobsHours API en el VPS
-# Ejecutar como: bash /var/www/jobshour-api/deploy/deploy.sh
+#!/usr/bin/env bash
+# ============================================================
+# deploy.sh – Deploy completo JobsHours API en el VPS
+# Ejecutar: bash /var/www/jobshour-api/deploy/deploy.sh
+# ============================================================
+set -euo pipefail
 
-set -e
-cd /var/www/jobshour-api
+APP_DIR="/var/www/jobshour-api"
+LOG_FILE="/var/log/jobshours-deploy.log"
+ROLLBACK_COMMIT=""
 
-echo "=== [1/7] Pull latest code ==="
-git pull origin master
+log()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
+fail() { log "❌ ERROR: $*"; exit 1; }
 
-echo "=== [2/7] Install dependencies ==="
+cd "$APP_DIR" || fail "No existe $APP_DIR"
+
+# ── Guardar commit actual para posible rollback ───────────────────────────────
+ROLLBACK_COMMIT=$(git rev-parse HEAD)
+log "Commit actual (rollback target): $ROLLBACK_COMMIT"
+
+# ── 1. Pull ───────────────────────────────────────────────────────────────────
+log "=== [1/9] Pull latest code ==="
+git fetch origin
+git reset --hard origin/master
+
+NEW_COMMIT=$(git rev-parse HEAD)
+log "Nuevo commit: $NEW_COMMIT"
+
+# ── 2. Dependencias PHP ───────────────────────────────────────────────────────
+log "=== [2/9] Composer install ==="
 composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
 
-echo "=== [3/7] Run migrations ==="
+# ── 3. Migraciones ───────────────────────────────────────────────────────────
+log "=== [3/9] Migraciones ==="
 php artisan migrate --force
 
-echo "=== [4/7] Clear caches ==="
+# ── 4. Storage link ──────────────────────────────────────────────────────────
+log "=== [4/9] Storage link ==="
+php artisan storage:link --force 2>/dev/null || true
+
+# ── 5. Limpiar y optimizar caches ────────────────────────────────────────────
+log "=== [5/9] Limpiar y optimizar caches ==="
 php artisan config:clear
 php artisan cache:clear
 php artisan route:clear
 php artisan view:clear
+# En producción: compilar caches para máxima velocidad
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
 
-echo "=== [5/7] Setup Supervisor configs ==="
-cp /var/www/jobshour-api/deploy/supervisor-horizon.conf /etc/supervisor/conf.d/jobshours-horizon.conf
-cp /var/www/jobshour-api/deploy/supervisor-reverb.conf /etc/supervisor/conf.d/jobshours-reverb.conf
+# ── 6. Reiniciar queue workers (Horizon recarga el config) ───────────────────
+log "=== [6/9] Reiniciar queue workers ==="
+php artisan queue:restart
+php artisan horizon:terminate 2>/dev/null || true
+
+# ── 7. Supervisor: instalar/actualizar configs y reiniciar procesos ───────────
+log "=== [7/9] Supervisor ==="
+cp "$APP_DIR/deploy/supervisor-horizon.conf"      /etc/supervisor/conf.d/jobshours-horizon.conf
+cp "$APP_DIR/deploy/supervisor-reverb.conf"       /etc/supervisor/conf.d/jobshours-reverb.conf
+cp "$APP_DIR/deploy/supervisor-queue-worker.conf" /etc/supervisor/conf.d/jobshours-worker.conf
 supervisorctl reread
 supervisorctl update
+supervisorctl restart jobshours-horizon || true
+supervisorctl restart jobshours-reverb  || true
 
-echo "=== [6/7] Restart Horizon + Reverb ==="
-supervisorctl restart jobshours-horizon
-supervisorctl restart jobshours-reverb
+# ── 8. Reload Nginx (sin downtime) ───────────────────────────────────────────
+log "=== [8/9] Nginx reload ==="
+nginx -t && systemctl reload nginx
 
-echo "=== [7/7] Status ==="
+# ── 9. Health check ──────────────────────────────────────────────────────────
+log "=== [9/9] Health check ==="
+sleep 3
+
+HEALTH_URL="http://127.0.0.1/api/health"
+HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" || echo "000")
+
+if [[ "$HTTP_STATUS" == "200" ]]; then
+    log "✅ Health check OK (HTTP $HTTP_STATUS)"
+else
+    log "⚠️  Health check retornó HTTP $HTTP_STATUS — verificar manualmente"
+    log "   URL probada: $HEALTH_URL"
+fi
+
+# ── Estado final ─────────────────────────────────────────────────────────────
+log ""
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log "✅ Deploy API completado"
+log "   Commit: $NEW_COMMIT"
+log "   Log:    $LOG_FILE"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 supervisorctl status
-php artisan horizon:status
-
-echo ""
-echo "✅ Deploy completado. Recuerda agregar SENTRY_LARAVEL_DSN y NEXT_PUBLIC_SENTRY_DSN al .env"
+php artisan horizon:status 2>/dev/null || true
