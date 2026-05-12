@@ -396,12 +396,12 @@ class DemandMapController extends Controller
     }
 
     /**
-     * Take público con auth manual (bypass middleware issues)
+     * Take público con auth manual (bypass middleware issues).
+     * Usa el mismo mutex atómico que take().
      */
     public function takePublic(Request $request, ServiceRequest $publicDemand)
     {
         try {
-            // Auth manual via Bearer token
             $tokenStr = str_replace('Bearer ', '', $request->header('Authorization', ''));
             $parts = explode('|', $tokenStr, 2);
             $tokenId = $parts[0] ?? null;
@@ -417,64 +417,19 @@ class DemandMapController extends Controller
                 return response()->json(['status' => 'error', 'message' => 'Usuario no encontrado'], 401);
             }
 
-            // Validaciones
-            if ($publicDemand->status !== 'pending') {
-                return response()->json(['status' => 'error', 'message' => 'Esta demanda ya no está disponible', '_debug' => ['status' => $publicDemand->status]], 422);
-            }
-            if ($publicDemand->worker_id) {
-                return response()->json(['status' => 'error', 'message' => 'Ya fue tomada por otro trabajador'], 422);
-            }
-
             $worker = Worker::where('user_id', $user->id)->first();
             if (!$worker) {
                 return response()->json(['status' => 'error', 'message' => 'Debes activar tu perfil de trabajador'], 422);
             }
-            if ($publicDemand->client_id === $user->id) {
-                return response()->json(['status' => 'error', 'message' => 'No puedes tomar tu propia demanda'], 422);
+
+            $precheck = $this->precheckTake($publicDemand, $user->id, $worker);
+            if ($precheck !== null) {
+                return $precheck;
             }
-            if ($worker->availability_status === 'inactive') {
-                return response()->json(['status' => 'error', 'message' => 'Activa tu disponibilidad primero'], 422);
-            }
 
-            // Crear solicitud
-            $newRequest = null;
-            DB::transaction(function() use ($publicDemand, $worker, &$newRequest) {
-                $newRequest = ServiceRequest::create([
-                    'client_id' => $publicDemand->client_id,
-                    'worker_id' => $worker->id,
-                    'category_id' => $publicDemand->category_id,
-                    'type' => $publicDemand->type ?? 'fixed_job',
-                    'category_type' => $publicDemand->category_type ?? 'fixed',
-                    'description' => $publicDemand->description,
-                    'urgency' => $publicDemand->urgency ?? 'normal',
-                    'offered_price' => $publicDemand->offered_price,
-                    'status' => 'pending',
-                    'expires_at' => JobshourSla::mapTakeExpiresAt(),
-                    'payload' => $publicDemand->payload,
-                ]);
-
-                if ($publicDemand->client_location) {
-                    $location = DB::selectOne(
-                        "SELECT ST_X(client_location::geometry) as lng, ST_Y(client_location::geometry) as lat FROM service_requests WHERE id = ?",
-                        [$publicDemand->id]
-                    );
-                    if ($location) {
-                        DB::update(
-                            "UPDATE service_requests SET client_location = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
-                            [$location->lng, $location->lat, $newRequest->id]
-                        );
-                    }
-                }
-            });
-
-            $newRequest->load(['client:id,name,avatar', 'category:id,display_name,color']);
-            $acceptHuman = JobshourSla::describeSeconds(JobshourSla::mapTakeAcceptSeconds());
-
-            return response()->json([
-                'status' => 'success',
-                'message' => "✅ Has tomado esta demanda. Tienes {$acceptHuman} para pulsar Aceptar en Mis solicitudes.",
-                'data' => $newRequest,
-            ], 201);
+            return $this->atomicTake($publicDemand, $worker, 'takePublic');
+        } catch (\App\Exceptions\DemandAlreadyTakenException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -484,52 +439,14 @@ class DemandMapController extends Controller
     }
 
     /**
-     * Worker toma una demanda pública (crea solicitud dirigida a él)
+     * Worker toma una demanda pública (crea solicitud dirigida a él).
      * Endpoint: POST /api/v1/demand/{id}/take
      */
     public function take(Request $request, ServiceRequest $publicDemand)
     {
         try {
-            \Log::info('TAKE DEBUG', [
-                'demand_id' => $publicDemand->id,
-                'status' => $publicDemand->status,
-                'worker_id' => $publicDemand->worker_id,
-                'user_id' => $request->user()?->id,
-                'token' => substr($request->bearerToken() ?? 'none', 0, 10),
-            ]);
-
-            // Validar que la demanda esté disponible
-            if ($publicDemand->status !== 'pending') {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Esta demanda ya no está disponible',
-                    '_debug' => [
-                        'demand_id' => $publicDemand->id,
-                        'actual_status' => $publicDemand->status,
-                        'worker_id' => $publicDemand->worker_id,
-                        'user_id' => $request->user()?->id,
-                    ],
-                ], 422);
-            }
-
-            if ($publicDemand->pin_expires_at && $publicDemand->pin_expires_at->isPast()) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Esta demanda ha expirado',
-                ], 422);
-            }
-
-            // Validar que tenga worker_id (no puede ser una demanda ya asignada)
-            if ($publicDemand->worker_id) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Esta demanda ya fue tomada por otro trabajador',
-                ], 422);
-            }
-
             $user = $request->user();
-            
-            // Obtener o crear worker del usuario autenticado
+
             $worker = Worker::where('user_id', $user->id)->first();
             if (!$worker) {
                 return response()->json([
@@ -538,102 +455,148 @@ class DemandMapController extends Controller
                 ], 422);
             }
 
-            // Validar que el worker no sea el mismo cliente
-            if ($publicDemand->client_id === $user->id) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'No puedes tomar tu propia demanda',
-                ], 422);
+            $precheck = $this->precheckTake($publicDemand, $user->id, $worker);
+            if ($precheck !== null) {
+                return $precheck;
             }
 
-            // Validar que el worker esté disponible
-            if ($worker->availability_status === 'inactive') {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Debes activar tu disponibilidad para tomar demandas',
-                ], 422);
-            }
-
-            // Crear nueva solicitud dirigida a este worker (basada en la demanda pública)
-            $newRequest = null;
-            DB::transaction(function() use ($publicDemand, $worker, &$newRequest) {
-                $newRequest = ServiceRequest::create([
-                    'client_id' => $publicDemand->client_id,
-                    'worker_id' => $worker->id,
-                    'category_id' => $publicDemand->category_id,
-                    'type' => $publicDemand->type ?? 'fixed_job',
-                    'category_type' => $publicDemand->category_type ?? 'fixed',
-                    'description' => $publicDemand->description,
-                    'urgency' => $publicDemand->urgency ?? 'normal',
-                    'offered_price' => $publicDemand->offered_price,
-                    'status' => 'pending',
-                    'expires_at' => JobshourSla::mapTakeExpiresAt(),
-                    'payload' => $publicDemand->payload,
-                    'pickup_address' => $publicDemand->pickup_address,
-                    'delivery_address' => $publicDemand->delivery_address,
-                    'pickup_lat' => $publicDemand->pickup_lat,
-                    'pickup_lng' => $publicDemand->pickup_lng,
-                    'delivery_lat' => $publicDemand->delivery_lat,
-                    'delivery_lng' => $publicDemand->delivery_lng,
-                    'carga_tipo' => $publicDemand->carga_tipo,
-                    'carga_peso' => $publicDemand->carga_peso,
-                ]);
-
-                // Copiar ubicación geográfica
-                if ($publicDemand->client_location) {
-                    $location = DB::selectOne(
-                        "SELECT ST_X(client_location::geometry) as lng, ST_Y(client_location::geometry) as lat FROM service_requests WHERE id = ?",
-                        [$publicDemand->id]
-                    );
-                    if ($location) {
-                        DB::update(
-                            "UPDATE service_requests SET client_location = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
-                            [$location->lng, $location->lat, $newRequest->id]
-                        );
-                    }
-                }
-
-                // Marcar la demanda pública como tomada (opcional: puede quedarse visible para otros workers)
-                // Por ahora la dejamos como está, pero podríamos agregar un campo "taken_by_worker_id"
-            });
-
-            if (!$newRequest) {
-                throw new \Exception('Error al crear solicitud');
-            }
-
-            // Broadcast evento de nueva solicitud
-            try {
-                $event = new \App\Events\ServiceRequestCreated($newRequest);
-                broadcast($event);
-                $event->handle();
-            } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::warning('DemandMapController::take - Error en broadcast', [
-                    'error' => $e->getMessage(),
-                    'request_id' => $newRequest->id
-                ]);
-            }
-
-            $newRequest->load(['client:id,name,avatar', 'category:id,display_name,color']);
-            $acceptHuman = JobshourSla::describeSeconds(JobshourSla::mapTakeAcceptSeconds());
-
-            return response()->json([
-                'status' => 'success',
-                'message' => "✅ Has tomado esta demanda. Tienes {$acceptHuman} para pulsar Aceptar en Mis solicitudes.",
-                'data' => $newRequest,
-            ], 201);
+            return $this->atomicTake($publicDemand, $worker, 'take');
+        } catch (\App\Exceptions\DemandAlreadyTakenException $e) {
+            throw $e;
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('DemandMapController::take - Error crítico', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
                 'demand_id' => $publicDemand->id ?? null,
-                'user_id' => $request->user()?->id
+                'user_id' => $request->user()?->id,
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
-                'message' => config('app.debug') ? $e->getMessage() : 'Error al tomar demanda. Por favor intenta nuevamente.'
+                'message' => config('app.debug') ? $e->getMessage() : 'Error al tomar demanda. Por favor intenta nuevamente.',
             ], 500);
         }
+    }
+
+    /**
+     * Validaciones previas compartidas entre take() y takePublic().
+     * Devuelve JsonResponse si hay error, null si todo está bien.
+     */
+    private function precheckTake(ServiceRequest $demand, int $userId, Worker $worker): ?\Illuminate\Http\JsonResponse
+    {
+        if ($demand->status !== 'pending') {
+            return response()->json(['status' => 'error', 'message' => 'Esta demanda ya no está disponible'], 422);
+        }
+
+        if ($demand->pin_expires_at && $demand->pin_expires_at->isPast()) {
+            return response()->json(['status' => 'error', 'message' => 'Esta demanda ha expirado'], 422);
+        }
+
+        if ($demand->taken_by_worker_id !== null) {
+            return response()->json(['status' => 'error', 'message' => 'Esta demanda ya fue tomada por otro trabajador'], 409);
+        }
+
+        if ($demand->client_id === $userId) {
+            return response()->json(['status' => 'error', 'message' => 'No puedes tomar tu propia demanda'], 422);
+        }
+
+        if ($worker->availability_status === 'inactive') {
+            return response()->json(['status' => 'error', 'message' => 'Debes activar tu disponibilidad para tomar demandas'], 422);
+        }
+
+        return null;
+    }
+
+    /**
+     * Cierre atómico de la demanda + creación de la solicitud derivada.
+     *
+     * Usa un UPDATE condicional (WHERE taken_by_worker_id IS NULL) como mutex de BD,
+     * garantizando que aunque dos workers lleguen al mismo tiempo, solo uno crea la solicitud.
+     */
+    private function atomicTake(ServiceRequest $demand, Worker $worker, string $caller): \Illuminate\Http\JsonResponse
+    {
+        $newRequest = null;
+
+        DB::transaction(function () use ($demand, $worker, &$newRequest) {
+            // 1. Intentar reservar la demanda de forma atómica.
+            $locked = DB::update(
+                "UPDATE service_requests
+                 SET taken_by_worker_id = ?, taken_at = NOW()
+                 WHERE id = ? AND status = 'pending' AND taken_by_worker_id IS NULL",
+                [$worker->id, $demand->id]
+            );
+
+            if ($locked === 0) {
+                // Otro worker llegó primero — abortar la transacción con una excepción controlada.
+                throw new \App\Exceptions\DemandAlreadyTakenException();
+            }
+
+            // 2. Crear la solicitud dirigida derivada.
+            $newRequest = ServiceRequest::create([
+                'client_id'             => $demand->client_id,
+                'worker_id'             => $worker->id,
+                'category_id'           => $demand->category_id,
+                'type'                  => $demand->type ?? 'fixed_job',
+                'category_type'         => $demand->category_type ?? 'fixed',
+                'description'           => $demand->description,
+                'urgency'               => $demand->urgency ?? 'normal',
+                'offered_price'         => $demand->offered_price,
+                'status'                => 'pending',
+                'expires_at'            => JobshourSla::mapTakeExpiresAt(),
+                'payload'               => $demand->payload,
+                'pickup_address'        => $demand->pickup_address,
+                'delivery_address'      => $demand->delivery_address,
+                'pickup_lat'            => $demand->pickup_lat,
+                'pickup_lng'            => $demand->pickup_lng,
+                'delivery_lat'          => $demand->delivery_lat,
+                'delivery_lng'          => $demand->delivery_lng,
+                'carga_tipo'            => $demand->carga_tipo,
+                'carga_peso'            => $demand->carga_peso,
+                'derived_from_demand_id' => $demand->id,
+            ]);
+
+            // 3. Copiar ubicación geográfica.
+            if ($demand->client_location) {
+                $loc = DB::selectOne(
+                    "SELECT ST_X(client_location::geometry) as lng, ST_Y(client_location::geometry) as lat
+                     FROM service_requests WHERE id = ?",
+                    [$demand->id]
+                );
+                if ($loc) {
+                    DB::update(
+                        "UPDATE service_requests SET client_location = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
+                        [$loc->lng, $loc->lat, $newRequest->id]
+                    );
+                }
+            }
+
+            // 4. Sacar el pin del mapa (demanda ya tomada, no debe aparecer a otros workers).
+            DB::update(
+                "UPDATE service_requests SET pin_expires_at = NOW() WHERE id = ?",
+                [$demand->id]
+            );
+        });
+
+        // Broadcast nueva solicitud.
+        try {
+            $event = new \App\Events\ServiceRequestCreated($newRequest);
+            broadcast($event);
+            $event->handle();
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning("DemandMapController::{$caller} - Error broadcast", [
+                'error' => $e->getMessage(),
+                'request_id' => $newRequest?->id,
+            ]);
+        }
+
+        $newRequest->load(['client:id,name,avatar', 'category:id,display_name,color']);
+        $acceptHuman = JobshourSla::describeSeconds(JobshourSla::mapTakeAcceptSeconds());
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => "✅ Has tomado esta demanda. Tienes {$acceptHuman} para pulsar Aceptar en Mis solicitudes.",
+            'data'    => $newRequest,
+        ], 201);
     }
 
     /**

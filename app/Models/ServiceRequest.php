@@ -24,6 +24,9 @@ class ServiceRequest extends Model
         'scheduled_at', 'workers_needed', 'workers_accepted', 'recurrence', 'recurrence_days',
         'boosted_until',
         'boost_mp_payment_id',
+        'taken_by_worker_id',
+        'taken_at',
+        'derived_from_demand_id',
     ];
 
     protected $casts = [
@@ -57,6 +60,7 @@ class ServiceRequest extends Model
         'workers_accepted' => 'integer',
         'recurrence_days' => 'array',
         'boosted_until' => 'datetime',
+        'taken_at' => 'datetime',
     ];
 
     protected $appends = ['fuzzed_latitude', 'fuzzed_longitude'];
