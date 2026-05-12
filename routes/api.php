@@ -132,6 +132,7 @@ Route::prefix('v1')->group(function () {
 
     // Health Check — para UptimeRobot / monitoreo externo
     Route::get('/health', [HealthController::class, 'check']);
+    Route::get('/health/ping', [HealthController::class, 'ping']);
 
     // Analytics producto (Next forward o cliente) — throttle por IP
     Route::post('/analytics/events', [ProductAnalyticsController::class, 'store'])->middleware('throttle:analytics');

@@ -9,6 +9,17 @@ use Illuminate\Support\Facades\Redis;
 
 class HealthController extends Controller
 {
+    /**
+     * Ping ultraligero para balanceadores / UptimeRobot (siempre 200 si la app responde).
+     */
+    public function ping()
+    {
+        return response()->json([
+            'ok' => true,
+            'timestamp' => now()->toIso8601String(),
+        ]);
+    }
+
     public function check()
     {
         $checks = [];

@@ -9,6 +9,7 @@ use App\Models\StoreOrder;
 use App\Models\ServiceRequest;
 use App\Models\Worker;
 use App\Services\FCMService;
+use App\Services\StoreOrderPaidMailer;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -422,6 +423,7 @@ class StoreOrderController extends Controller
         }
 
         $order = StoreOrder::findOrFail($id);
+        $wasPending = $order->status === 'pending';
         $manualPaymentId = 'qa-manual-' . $order->id . '-' . now()->format('YmdHis');
 
         $updates = [
@@ -446,6 +448,18 @@ class StoreOrderController extends Controller
             'manual_payment_id' => $manualPaymentId,
             'note' => $validated['note'] ?? null,
         ]);
+
+        $order->refresh();
+        if ($wasPending && $order->status === 'paid') {
+            try {
+                app(StoreOrderPaidMailer::class)->sendReceiptsIfPaid($order);
+            } catch (\Throwable $e) {
+                Log::warning('[StoreOrder][QA] Email post-pago falló', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         return response()->json([
             'status' => 'success',

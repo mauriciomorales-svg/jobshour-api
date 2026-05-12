@@ -64,6 +64,8 @@ class StoreMercadoPagoWebhookProcessor
             return 'order_not_found';
         }
 
+        $wasPending = $order->status === 'pending';
+
         $updates = [
             'mp_payment_id' => $paymentId,
             'mp_status' => (string) ($pay['status'] ?? ''),
@@ -82,6 +84,11 @@ class StoreMercadoPagoWebhookProcessor
                 $qUpdates['status'] = 'paid';
             }
             IntegratedQuote::where('id', $order->integrated_quote_id)->update($qUpdates);
+        }
+
+        $order->refresh();
+        if ($wasPending && $order->status === 'paid') {
+            app(\App\Services\StoreOrderPaidMailer::class)->sendReceiptsIfPaid($order);
         }
 
         return 'ok';
