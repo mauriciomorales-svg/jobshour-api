@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\UniqueConstraintViolationException;
 
 /**
  * Registro idempotente de webhooks de Mercado Pago.
@@ -45,14 +46,19 @@ class MpWebhookEvent extends Model
             return false; // ya procesado
         }
 
-        self::create([
-            'mp_payment_id'      => $mpPaymentId,
-            'event_type'         => $eventType,
-            'external_reference' => $extRef ?: null,
-            'mp_status'          => $mpStatus,
-            'result'             => $result,
-            'notes'              => $notes ?: null,
-        ]);
+        try {
+            self::create([
+                'mp_payment_id'      => $mpPaymentId,
+                'event_type'         => $eventType,
+                'external_reference' => $extRef ?: null,
+                'mp_status'          => $mpStatus,
+                'result'             => $result,
+                'notes'              => $notes ?: null,
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            // Dos webhooks concurrentes: el otro insertó primero.
+            return false;
+        }
 
         return true; // procesado por primera vez
     }

@@ -2,8 +2,10 @@
 
 return [
     'mercadopago' => [
-        'access_token' => env('MERCADOPAGO_ACCESS_TOKEN'),
-        'public_key' => env('MERCADOPAGO_PUBLIC_KEY'),
+        'access_token' => env('MP_ACCESS_TOKEN') ?: env('MERCADOPAGO_ACCESS_TOKEN'),
+        'public_key' => env('MP_PUBLIC_KEY') ?: env('MERCADOPAGO_PUBLIC_KEY'),
+        /** Secret de firma HMAC en webhooks (panel MP → tu integración). Vacío = no validar (solo dev). */
+        'webhook_secret' => env('MERCADOPAGO_WEBHOOK_SECRET', ''),
     ],
     'stripe' => [
         'key' => env('STRIPE_KEY'),

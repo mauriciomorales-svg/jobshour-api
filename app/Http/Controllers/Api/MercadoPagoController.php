@@ -648,7 +648,8 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'not_found']);
         }
 
-        // Idempotencia: ignorar si ya procesamos este pago
+        // Idempotencia: la fila evita doble acreditación; igual hay que sincronizar el SR
+        // cuando MP reintenta o el estado pasa pending → approved (antes se hacía return y quedaba colgado).
         $isNew = MpWebhookEvent::record(
             (string) $payment['id'],
             'service_payment',
@@ -656,8 +657,7 @@ class MercadoPagoController extends Controller
             $extRef
         );
         if (! $isNew) {
-            Log::info('[MP] Webhook service_payment ya procesado (idempotente)', ['mp_id' => $payment['id']]);
-            return response()->json(['status' => 'already_processed']);
+            Log::info('[MP] Webhook service_payment repetido; re-sincronizando estado', ['mp_id' => $payment['id']]);
         }
 
         $serviceRequest->update(['mp_status' => $payment['status']]);
@@ -676,7 +676,7 @@ class MercadoPagoController extends Controller
             Log::info('[MP] Pago rechazado/cancelado', ['sr_id' => $serviceRequestId]);
         }
 
-        return response()->json(['status' => 'ok']);
+        return response()->json(['status' => $isNew ? 'ok' : 'already_processed']);
     }
 
     /**
@@ -694,15 +694,23 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'not_found']);
         }
 
-        // Idempotencia: solo aplicar boost una vez por pago
+        $mpStatus = (string) ($payment['status'] ?? '');
+        if (! in_array($mpStatus, ['approved', 'authorized'], true)) {
+            Log::info('[MP] Boost webhook sin aprobación aún', ['sr' => $srId, 'status' => $mpStatus]);
+
+            return response()->json(['status' => 'ok_boost_pending']);
+        }
+
+        // Idempotencia solo cuando hay efecto (aprobado): si registrábamos en pending, el segundo webhook approved quedaba bloqueado.
         $isNew = MpWebhookEvent::record(
             (string) ($payment['id'] ?? 'unknown'),
             'boost',
-            (string) ($payment['status'] ?? ''),
+            $mpStatus,
             $extRef
         );
         if (! $isNew) {
             Log::info('[MP] Boost ya procesado (idempotente)', ['sr' => $srId, 'mp_id' => $payment['id'] ?? null]);
+
             return response()->json(['status' => 'already_processed']);
         }
 
@@ -713,13 +721,9 @@ class MercadoPagoController extends Controller
             $sr->boost_mp_payment_id = (string) $payment['id'];
         }
 
-        if (in_array($payment['status'] ?? '', ['approved', 'authorized'], true)) {
-            $base = ($sr->boosted_until && $sr->boosted_until->isFuture()) ? $sr->boosted_until : now();
-            $sr->boosted_until = $base->copy()->addHours($hours);
-            Log::info('[MP] Boost demanda aplicado', ['sr' => $srId, 'hours' => $hours]);
-        } else {
-            Log::info('[MP] Boost webhook sin aprobación aún', ['sr' => $srId, 'status' => $payment['status'] ?? null]);
-        }
+        $base = ($sr->boosted_until && $sr->boosted_until->isFuture()) ? $sr->boosted_until : now();
+        $sr->boosted_until = $base->copy()->addHours($hours);
+        Log::info('[MP] Boost demanda aplicado', ['sr' => $srId, 'hours' => $hours]);
 
         $sr->save();
 
