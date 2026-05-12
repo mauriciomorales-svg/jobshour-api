@@ -23,6 +23,13 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
+        // Reportar excepciones a Sentry (solo si DSN está configurado)
+        $exceptions->report(function (\Throwable $e) {
+            if (app()->bound('sentry') && config('sentry.dsn')) {
+                \Sentry\captureException($e);
+            }
+        });
+
         $exceptions->render(function (AuthenticationException $e, $request) {
             if ($request->is('api/*')) {
                 return response()->json([
