@@ -61,7 +61,9 @@ docker exec -d jobshour-api php artisan reverb:start
 - **Privacidad / informes:** `php artisan analytics:anonymize-pii` (programado domingo ~04:00). `php artisan analytics:report-cohort-slack` si **`ANALYTICS_SLACK_WEBHOOK_URL`** (programado lunes ~09:00).
 
 ### Checklist despliegue (rápido)
-1. `php artisan migrate --force` (o `composer migrate` · `.\scripts\migrate.ps1` en Windows) · 2. `.env` producción (`MP_ACCESS_TOKEN`, `FRONTEND_URL`, opcionales arriba) · 3. Cron cada minuto: `php artisan schedule:run` (ver `scripts/crontab-scheduler.example`) · 4. Probar pago MP en sandbox antes de producción.
+1. `php artisan migrate --force` (o `composer migrate` · `.\scripts\migrate.ps1` en Windows) · 2. `.env` producción (`MP_ACCESS_TOKEN`, **`FRONTEND_URL`** URL del Next, **`MAIL_*`** SMTP u otro mailer, opcional **`SUPPORT_EMAIL`**) · 3. Cron cada minuto: `php artisan schedule:run` (ver `scripts/crontab-scheduler.example`) · 4. Probar pago MP en sandbox antes de producción · 5. Probar correo: con un pedido de tienda en `paid`, el comprador y el vendedor deberían recibir mail (si `MAIL_MAILER` no es solo `log`).
+
+**Correo pedido tienda pagado:** `App\Services\StoreOrderPaidMailer` se ejecuta desde el webhook Mercado Pago y desde `POST /api/v1/store/orders/{id}/qa-paid` (solo no-prod). Requiere `FRONTEND_URL` apuntando al dominio donde vive `/tienda/success`.
 
 **Scheduler (Laravel 11):** las tareas están en `bootstrap/app.php` (`->withSchedule()`). Comprobar con `composer schedule:list` o `php artisan schedule:list`.
 

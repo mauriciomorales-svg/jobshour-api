@@ -26,6 +26,11 @@ class StoreOrderController extends Controller
         return (string) config('services.mercadopago.access_token', '');
     }
 
+    private function frontendBase(): string
+    {
+        return rtrim((string) config('app.frontend_url', config('app.url')), '/');
+    }
+
     private function isWebhookSignatureValid(Request $request): bool
     {
         $secret = trim((string) config('services.mercadopago.webhook_secret', ''));
@@ -122,9 +127,9 @@ class StoreOrderController extends Controller
             'external_reference' => (string) $order->id,
             'notification_url'   => config('app.url') . '/api/v1/store/webhook',
             'back_urls' => [
-                'success' => config('app.url') . '/tienda/success?confirmation_code=' . $confirmationCode . '&external_reference=' . $order->id . '&token=' . $order->public_token,
-                'failure' => config('app.url') . '/tienda/failure',
-                'pending' => config('app.url') . '/tienda/pending',
+                'success' => $this->frontendBase() . '/tienda/success?confirmation_code=' . $confirmationCode . '&external_reference=' . $order->id . '&token=' . $order->public_token,
+                'failure' => $this->frontendBase() . '/tienda/failure',
+                'pending' => $this->frontendBase() . '/tienda/pending',
             ],
             'auto_return'          => 'approved',
             'statement_descriptor' => 'JobsHours',

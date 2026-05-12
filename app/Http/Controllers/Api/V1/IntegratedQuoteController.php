@@ -29,6 +29,11 @@ class IntegratedQuoteController extends Controller
         return (string) config('services.mercadopago.access_token', '');
     }
 
+    private function frontendBase(): string
+    {
+        return rtrim((string) config('app.frontend_url', config('app.url')), '/');
+    }
+
     private function findQuoteByPublicToken(string $token): ?IntegratedQuote
     {
         // Consulta JSON portable (MySQL/PostgreSQL) para evitar 500 en producción por sintaxis específica.
@@ -340,9 +345,9 @@ class IntegratedQuoteController extends Controller
             'external_reference' => (string) $order->id,
             'notification_url'   => config('app.url') . '/api/v1/store/webhook',
             'back_urls' => [
-                'success' => config('app.url') . '/tienda/success?confirmation_code=' . $order->confirmation_code . '&external_reference=' . $order->id . '&token=' . $order->public_token,
-                'failure' => config('app.url') . '/tienda/failure',
-                'pending' => config('app.url') . '/tienda/pending',
+                'success' => $this->frontendBase() . '/tienda/success?confirmation_code=' . $order->confirmation_code . '&external_reference=' . $order->id . '&token=' . $order->public_token,
+                'failure' => $this->frontendBase() . '/tienda/failure',
+                'pending' => $this->frontendBase() . '/tienda/pending',
             ],
             'auto_return'          => 'approved',
             'statement_descriptor' => 'JobsHours',
@@ -547,7 +552,7 @@ class IntegratedQuoteController extends Controller
             }
         });
 
-        $publicUrl = rtrim((string) config('app.url'), '/') . '/tienda/cotizacion/' . $publicToken;
+        $publicUrl = $this->frontendBase() . '/tienda/cotizacion/' . $publicToken;
 
         return response()->json([
             'status' => 'success',
@@ -592,7 +597,7 @@ class IntegratedQuoteController extends Controller
                 'buyer_email' => data_get($quote->metadata, 'buyer_email'),
                 'buyer_phone' => data_get($quote->metadata, 'buyer_phone'),
                 'public_token' => $token,
-                'public_url' => $token ? (rtrim((string) config('app.url'), '/') . '/tienda/cotizacion/' . $token) : null,
+                'public_url' => $token ? ($this->frontendBase() . '/tienda/cotizacion/' . $token) : null,
                 'expires_at' => $expiresAt,
                 'expired' => $this->isQuoteExpired($quote),
                 'payment_link' => $quote->payment_link,
@@ -842,9 +847,9 @@ class IntegratedQuoteController extends Controller
             'external_reference' => (string) $order->id,
             'notification_url'   => config('app.url') . '/api/v1/store/webhook',
             'back_urls' => [
-                'success' => config('app.url') . '/tienda/success?confirmation_code=' . $order->confirmation_code . '&external_reference=' . $order->id . '&token=' . $order->public_token,
-                'failure' => config('app.url') . '/tienda/failure',
-                'pending' => config('app.url') . '/tienda/pending',
+                'success' => $this->frontendBase() . '/tienda/success?confirmation_code=' . $order->confirmation_code . '&external_reference=' . $order->id . '&token=' . $order->public_token,
+                'failure' => $this->frontendBase() . '/tienda/failure',
+                'pending' => $this->frontendBase() . '/tienda/pending',
             ],
             'auto_return' => 'approved',
             'statement_descriptor' => 'JobsHours',
