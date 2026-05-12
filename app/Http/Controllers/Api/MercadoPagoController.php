@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\MpWebhookEvent;
+use App\Jobs\ProcessMercadoPagoWebhook;
 use App\Models\ServiceRequest;
 use App\Services\FCMService;
 use Illuminate\Http\Request;
@@ -620,186 +620,22 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'no_id']);
         }
 
-        $response = Http::withToken($this->accessToken)
-            ->get("{$this->baseUrl}/v1/payments/{$paymentId}");
+        $paymentId = (string) $paymentId;
 
-        if (!$response->successful()) {
-            return response()->json(['status' => 'error'], 500);
+        if (config('mercadopago.webhook_sync', false)) {
+            try {
+                $result = app(\App\Services\MercadoPagoWebhookProcessor::class)->processByPaymentId($paymentId);
+
+                return response()->json(['status' => 'ok_sync', 'result' => $result]);
+            } catch (\Throwable $e) {
+                Log::error('[MP] Webhook sync falló', ['payment_id' => $paymentId, 'error' => $e->getMessage()]);
+
+                return response()->json(['status' => 'error', 'message' => 'sync_failed'], 500);
+            }
         }
 
-        $payment = $response->json();
+        ProcessMercadoPagoWebhook::dispatch($paymentId);
 
-        $extRef = (string) ($payment['external_reference'] ?? '');
-        if (str_starts_with($extRef, 'boost:')) {
-            return $this->applyDemandBoostFromPayment($payment, $extRef);
-        }
-        if (str_starts_with($extRef, 'credits:')) {
-            return $this->applyCreditsFromPayment($payment, $extRef);
-        }
-
-        $serviceRequestId = is_numeric($extRef) ? (int) $extRef : null;
-
-        if (! $serviceRequestId) {
-            return response()->json(['status' => 'no_reference']);
-        }
-
-        $serviceRequest = ServiceRequest::find($serviceRequestId);
-        if (! $serviceRequest) {
-            return response()->json(['status' => 'not_found']);
-        }
-
-        // Idempotencia: la fila evita doble acreditación; igual hay que sincronizar el SR
-        // cuando MP reintenta o el estado pasa pending → approved (antes se hacía return y quedaba colgado).
-        $isNew = MpWebhookEvent::record(
-            (string) $payment['id'],
-            'service_payment',
-            (string) ($payment['status'] ?? ''),
-            $extRef
-        );
-        if (! $isNew) {
-            Log::info('[MP] Webhook service_payment repetido; re-sincronizando estado', ['mp_id' => $payment['id']]);
-        }
-
-        $serviceRequest->update(['mp_status' => $payment['status']]);
-
-        if ($payment['status'] === 'authorized') {
-            $serviceRequest->update(['payment_status' => 'pending']);
-            Log::info('[MP] Pago autorizado (retención)', ['sr_id' => $serviceRequestId]);
-        } elseif ($payment['status'] === 'approved') {
-            $serviceRequest->update([
-                'payment_status' => 'completed',
-                'paid_at' => now(),
-            ]);
-            Log::info('[MP] Pago capturado, servicio pagado', ['sr_id' => $serviceRequestId]);
-        } elseif (in_array($payment['status'], ['cancelled', 'rejected'])) {
-            $serviceRequest->update(['payment_status' => 'failed']);
-            Log::info('[MP] Pago rechazado/cancelado', ['sr_id' => $serviceRequestId]);
-        }
-
-        return response()->json(['status' => $isNew ? 'ok' : 'already_processed']);
-    }
-
-    /**
-     * @param  array<string,mixed>  $payment
-     */
-    private function applyDemandBoostFromPayment(array $payment, string $extRef): \Illuminate\Http\JsonResponse
-    {
-        $srId = (int) substr($extRef, strlen('boost:'));
-        if ($srId < 1) {
-            return response()->json(['status' => 'bad_boost_ref']);
-        }
-
-        $sr = ServiceRequest::find($srId);
-        if (! $sr) {
-            return response()->json(['status' => 'not_found']);
-        }
-
-        $mpStatus = (string) ($payment['status'] ?? '');
-        if (! in_array($mpStatus, ['approved', 'authorized'], true)) {
-            Log::info('[MP] Boost webhook sin aprobación aún', ['sr' => $srId, 'status' => $mpStatus]);
-
-            return response()->json(['status' => 'ok_boost_pending']);
-        }
-
-        // Idempotencia solo cuando hay efecto (aprobado): si registrábamos en pending, el segundo webhook approved quedaba bloqueado.
-        $isNew = MpWebhookEvent::record(
-            (string) ($payment['id'] ?? 'unknown'),
-            'boost',
-            $mpStatus,
-            $extRef
-        );
-        if (! $isNew) {
-            Log::info('[MP] Boost ya procesado (idempotente)', ['sr' => $srId, 'mp_id' => $payment['id'] ?? null]);
-
-            return response()->json(['status' => 'already_processed']);
-        }
-
-        $meta = isset($payment['metadata']) && is_array($payment['metadata']) ? $payment['metadata'] : [];
-        $hours = (int) ($meta['boost_hours'] ?? config('services.boost.default_hours', 24));
-
-        if (! empty($payment['id'])) {
-            $sr->boost_mp_payment_id = (string) $payment['id'];
-        }
-
-        $base = ($sr->boosted_until && $sr->boosted_until->isFuture()) ? $sr->boosted_until : now();
-        $sr->boosted_until = $base->copy()->addHours($hours);
-        Log::info('[MP] Boost demanda aplicado', ['sr' => $srId, 'hours' => $hours]);
-
-        $sr->save();
-
-        return response()->json(['status' => 'ok_boost']);
-    }
-
-    /**
-     * Acredita créditos al usuario cuando el pago es aprobado.
-     * external_reference = 'credits:{userId}:{packId}'
-     *
-     * @param  array<string,mixed>  $payment
-     */
-    private function applyCreditsFromPayment(array $payment, string $extRef): \Illuminate\Http\JsonResponse
-    {
-        // credits:42:pack15  →  ['credits', '42', 'pack15']
-        $parts = explode(':', $extRef, 3);
-        if (count($parts) < 3) {
-            Log::warning('[MP] credits: extRef malformado', ['ref' => $extRef]);
-            return response()->json(['status' => 'bad_credits_ref']);
-        }
-
-        [, $userId, $packId] = $parts;
-        $userId = (int) $userId;
-
-        if ($userId < 1 || $packId === '') {
-            return response()->json(['status' => 'bad_credits_ref']);
-        }
-
-        $status = $payment['status'] ?? '';
-        if (! in_array($status, ['approved', 'authorized'], true)) {
-            Log::info('[MP] Credits webhook sin aprobación aún', ['status' => $status, 'ref' => $extRef]);
-            return response()->json(['status' => 'ok_credits_pending']);
-        }
-
-        // Idempotencia: solo acreditar créditos una vez por pago
-        $isNew = MpWebhookEvent::record(
-            (string) ($payment['id'] ?? 'unknown'),
-            'credits',
-            $status,
-            $extRef
-        );
-        if (! $isNew) {
-            Log::info('[MP] Credits ya procesado (idempotente)', ['user_id' => $userId, 'mp_id' => $payment['id'] ?? null]);
-            return response()->json(['status' => 'already_processed']);
-        }
-
-        $packs = collect(config('services.credits.packs', []));
-        $pack  = $packs->firstWhere('id', $packId);
-        $creditsToAdd = $pack ? (int) $pack['credits'] : 0;
-
-        // Si vienen en metadata (más fiable ante cambios de config)
-        $meta = isset($payment['metadata']) && is_array($payment['metadata']) ? $payment['metadata'] : [];
-        if (isset($meta['credits']) && (int) $meta['credits'] > 0) {
-            $creditsToAdd = (int) $meta['credits'];
-        }
-
-        if ($creditsToAdd < 1) {
-            Log::warning('[MP] credits: pack no encontrado o 0 créditos', ['pack_id' => $packId]);
-            return response()->json(['status' => 'unknown_pack']);
-        }
-
-        $user = \App\Models\User::find($userId);
-        if (! $user) {
-            Log::warning('[MP] credits: usuario no encontrado', ['user_id' => $userId]);
-            return response()->json(['status' => 'user_not_found']);
-        }
-
-        $user->increment('credits_balance', $creditsToAdd);
-        Log::info('[MP] Créditos acreditados', [
-            'user_id'      => $userId,
-            'pack_id'      => $packId,
-            'credits_added'=> $creditsToAdd,
-            'new_balance'  => $user->fresh()->credits_balance,
-            'mp_payment'   => $payment['id'] ?? null,
-        ]);
-
-        return response()->json(['status' => 'ok_credits']);
+        return response()->json(['status' => 'accepted', 'payment_id' => $paymentId]);
     }
 }
