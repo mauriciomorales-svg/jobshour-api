@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessStoreMercadoPagoWebhook;
 use App\Models\IntegratedQuote;
 use App\Models\StoreOrder;
 use App\Models\ServiceRequest;
@@ -478,52 +479,27 @@ class StoreOrderController extends Controller
         }
 
         $paymentId = $request->input('data.id') ?? $request->input('id');
-        if (!$paymentId) {
+        if (! $paymentId) {
             return response()->json(['status' => 'ok']);
         }
 
-        $payRes = Http::withToken($this->mpToken())->get("{$this->mpBase}/v1/payments/{$paymentId}");
-        if (!$payRes->successful()) {
-            return response()->json(['status' => 'ok']);
-        }
+        $paymentId = (string) $paymentId;
 
-        $pay = $payRes->json();
-        $externalRef = $pay['external_reference'] ?? null;
+        if (config('mercadopago.webhook_sync', false)) {
+            try {
+                $result = app(\App\Services\StoreMercadoPagoWebhookProcessor::class)->processByPaymentId($paymentId);
 
-        $order = null;
-        if ($externalRef && ctype_digit((string) $externalRef)) {
-            $order = StoreOrder::where('id', (int) $externalRef)->first();
-        }
-        if (!$order) {
-            $order = StoreOrder::where('mp_preference_id', $pay['preference_id'] ?? '')
-                ->orWhere('mp_payment_id', (string) $paymentId)
-                ->first();
-        }
+                return response()->json(['status' => 'ok_sync', 'result' => $result]);
+            } catch (\Throwable $e) {
+                Log::error('[StoreOrder] Webhook sync falló', ['payment_id' => $paymentId, 'error' => $e->getMessage()]);
 
-        if ($order) {
-            $updates = [
-                'mp_payment_id' => (string) $paymentId,
-                'mp_status'     => (string) ($pay['status'] ?? null),
-            ];
-            if (($pay['status'] ?? null) === 'approved' && $order->status === 'pending') {
-                $updates['status'] = 'paid';
-            }
-            $order->update($updates);
-
-            // Sincronizar cotización integrada (si existe)
-            if ($order->integrated_quote_id) {
-                $qUpdates = [
-                    'mp_payment_id' => (string) $paymentId,
-                    'mp_status' => (string) ($pay['status'] ?? null),
-                ];
-                if (($pay['status'] ?? null) === 'approved') {
-                    $qUpdates['status'] = 'paid';
-                }
-                IntegratedQuote::where('id', $order->integrated_quote_id)->update($qUpdates);
+                return response()->json(['status' => 'error', 'message' => 'sync_failed'], 500);
             }
         }
 
-        return response()->json(['status' => 'ok']);
+        ProcessStoreMercadoPagoWebhook::dispatch($paymentId);
+
+        return response()->json(['status' => 'accepted', 'payment_id' => $paymentId]);
     }
 }
 
