@@ -64,6 +64,9 @@ return Application::configure(basePath: dirname(__DIR__))
             ->withoutOverlapping()
             ->runInBackground();
 
+        // Snapshot de métricas para el dashboard de Horizon
+        $schedule->command('horizon:snapshot')->everyFiveMinutes();
+
         // Alerta Slack si Postgres no responde (sencillo: si health devuelve error, log CRITICAL)
         $schedule->call(function () {
             try {
