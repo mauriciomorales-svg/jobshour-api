@@ -8,6 +8,7 @@ use App\Models\SearchLog;
 use App\Models\ProfileView;
 use App\Events\ProfileViewed;
 use App\Services\GeocodingService;
+use App\Support\Geofence;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -44,11 +45,36 @@ class ExpertController extends Controller
         $isFallback = false;
         $workers = collect();
 
+        // Cap duro: nunca buscar más allá del radio máximo configurado (protege el VPS)
+        $maxRadius = Geofence::maxSearchRadiusKm();
+        if ($requestedRadius) {
+            $requestedRadius = min($requestedRadius, $maxRadius);
+        }
+
+        // Geofencing: si el punto está fuera de la zona piloto, devolver vacío con bandera
+        if (Geofence::enabled() && ! Geofence::isInsideZone((float) $lat, (float) $lng)) {
+            return response()->json([
+                'status' => 'outside_zone',
+                'data'   => [],
+                'meta'   => [
+                    'city'            => null,
+                    'radius_searched' => 0,
+                    'total_found'     => 0,
+                    'is_fallback'     => false,
+                    'outside_zone'    => true,
+                    'zone'            => Geofence::zoneInfo(),
+                ],
+            ]);
+        }
+
         if ($requestedRadius) {
             $workers = $this->searchVisible($lat, $lng, $requestedRadius, $categoryIds);
             $finalRadius = $requestedRadius;
         } else {
-            foreach (self::RADIUS_STEPS as $i => $step) {
+            // Limitar los pasos de búsqueda al radio máximo permitido
+            $steps = array_filter(self::RADIUS_STEPS, fn($s) => $s <= $maxRadius);
+            if (empty($steps)) $steps = [$maxRadius];
+            foreach ($steps as $i => $step) {
                 $workers = $this->searchVisible($lat, $lng, $step, $categoryIds);
                 $finalRadius = $step;
 
@@ -57,7 +83,7 @@ class ExpertController extends Controller
                     break;
                 }
             }
-            $finalRadius = $finalRadius ?? self::RADIUS_STEPS[count(self::RADIUS_STEPS) - 1];
+            $finalRadius = $finalRadius ?? end($steps);
         }
 
         // Silent logging - TEMPORALMENTE DESHABILITADO

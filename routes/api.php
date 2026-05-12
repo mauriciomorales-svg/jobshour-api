@@ -80,6 +80,11 @@ Route::prefix('v1')->group(function () {
     Route::get('/experts/{expert}', [ExpertController::class, 'show']);
     Route::get('/categories', [CategoryController::class, 'index']);
 
+    // Geofencing: info pública de la zona piloto activa
+    Route::get('/zone-info', function () {
+        return response()->json(\App\Support\Geofence::zoneInfo());
+    });
+
     // Nudges (frases motivacionales)
     Route::get('/nudges/random', [NudgeController::class, 'random']);
     Route::get('/nudges', [NudgeController::class, 'index']);
