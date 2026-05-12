@@ -204,7 +204,7 @@ class WorkerMediaController extends Controller
     {
         $user = $request->user();
         $worker = Worker::where('user_id', $user->id)
-            ->with(['categories', 'category'])
+            ->with(['categories', 'category', 'user:id,name,nickname,avatar,avatar_url'])
             ->first();
 
         if (!$worker) {
@@ -218,6 +218,14 @@ class WorkerMediaController extends Controller
             'status' => 'success',
             'data' => [
                 'id' => $worker->id,
+                'name' => $worker->user?->name,
+                'bio' => $worker->bio,
+                'bio_tarjeta' => $worker->bio_tarjeta,
+                'user' => $worker->user ? [
+                    'name' => $worker->user->name,
+                    'nickname' => $worker->user->nickname,
+                    'avatar_url' => $worker->user->avatar_url ?? $worker->user->avatar,
+                ] : null,
                 'cv_path' => $worker->cv_path,
                 'video_cv_path' => $worker->video_cv_path,
                 'video_cv_duration' => $worker->video_cv_duration,

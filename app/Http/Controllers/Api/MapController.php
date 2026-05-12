@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Worker;
+use App\Support\Geofence;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -18,7 +19,20 @@ class MapController extends Controller
             'skills' => 'nullable|array',
         ]);
 
-        $radius = $validated['radius'] ?? 5;
+        $radius = min((float) ($validated['radius'] ?? 5), Geofence::maxSearchRadiusKm());
+
+        if (Geofence::enabled() && ! Geofence::isInsideZone((float) $validated['lat'], (float) $validated['lng'])) {
+            return response()->json([
+                'center' => [
+                    'lat' => $validated['lat'],
+                    'lng' => $validated['lng'],
+                ],
+                'radius_km' => $radius,
+                'count' => 0,
+                'workers' => [],
+                'outside_zone' => true,
+            ]);
+        }
 
         $query = Worker::available()
             ->with(['user:id,name,avatar'])
@@ -66,6 +80,14 @@ class MapController extends Controller
         ]);
 
         $radius = $this->zoomToRadius($validated['zoom']);
+
+        if (Geofence::enabled() && ! Geofence::isInsideZone((float) $validated['lat'], (float) $validated['lng'])) {
+            return response()->json([
+                'clusters' => [],
+                'total_workers' => 0,
+                'outside_zone' => true,
+            ]);
+        }
 
         $workers = Worker::available()
             ->near($validated['lat'], $validated['lng'], $radius)

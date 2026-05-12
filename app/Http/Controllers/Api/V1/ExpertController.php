@@ -58,7 +58,7 @@ class ExpertController extends Controller
                 'data'   => [],
                 'meta'   => [
                     'city'            => null,
-                    'radius_searched' => 0,
+                    'radius_searched' => '0km',
                     'total_found'     => 0,
                     'is_fallback'     => false,
                     'outside_zone'    => true,
@@ -326,7 +326,16 @@ class ExpertController extends Controller
 
         $lat    = $validated['lat'];
         $lng    = $validated['lng'];
-        $radius = $validated['radius'] ?? 10;
+        $radius = min((float) ($validated['radius'] ?? 10), Geofence::maxSearchRadiusKm());
+
+        if (Geofence::enabled() && ! Geofence::isInsideZone((float) $lat, (float) $lng)) {
+            return response()->json([
+                'count'         => 0,
+                'radius'        => $radius,
+                'outside_zone'  => true,
+                'label'         => 'Fuera de la zona piloto',
+            ]);
+        }
 
         $cacheKey = "workers_count_{$lat}_{$lng}_{$radius}";
 
