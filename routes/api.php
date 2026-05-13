@@ -257,6 +257,9 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/store/orders', [StoreOrderController::class, 'myOrders']);
     Route::post('/store/orders/{id}/reject', [StoreOrderController::class, 'reject']);
 
+    /** Panel demandas: tienda + servicios + motivación (solo socio autenticado) */
+    Route::get('/dashboard/worker-pulse', [DashboardController::class, 'workerPulse']);
+
     // Cotización integrada (paquete servicio + materiales + delivery)
     Route::post('/integrated-quotes/checkout', [IntegratedQuoteController::class, 'checkout']);
     Route::post('/integrated-quotes/worker/create', [IntegratedQuoteController::class, 'createByWorker']);

@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\ServiceRequest;
+use App\Models\StoreOrder;
+use App\Models\Worker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -341,5 +343,101 @@ class DashboardController extends Controller
                 ],
             ], 500);
         }
+    }
+
+    /**
+     * Resumen motivador para el panel "Demandas": tienda + servicios + reputación (usuario autenticado con perfil worker).
+     */
+    public function workerPulse(Request $request)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthenticated'], 401);
+        }
+
+        /** @var Worker|null $worker */
+        $worker = $user->worker;
+        if (! $worker) {
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'has_worker' => false,
+                    'worker_id' => null,
+                    'tagline' => '',
+                    'store' => [
+                        'is_seller' => false,
+                        'store_name' => null,
+                        'orders_pending' => 0,
+                        'orders_paid_30d' => 0,
+                        'revenue_paid_30d_clp' => 0,
+                    ],
+                    'services' => [
+                        'active_jobs' => 0,
+                        'completed_30d' => 0,
+                    ],
+                    'reputation' => [
+                        'rating' => null,
+                        'rating_count' => 0,
+                        'total_jobs_completed' => 0,
+                    ],
+                ],
+            ]);
+        }
+
+        $wid = $worker->id;
+        $since = now()->subDays(30);
+
+        $ordersPending = StoreOrder::where('worker_id', $wid)->where('status', 'pending')->count();
+        $ordersPaid30d = StoreOrder::where('worker_id', $wid)
+            ->where('status', 'paid')
+            ->where('updated_at', '>=', $since)
+            ->count();
+        $revenuePaid30d = (int) StoreOrder::where('worker_id', $wid)
+            ->where('status', 'paid')
+            ->where('updated_at', '>=', $since)
+            ->sum('total');
+
+        $activeJobs = ServiceRequest::where('worker_id', $wid)
+            ->whereIn('status', ['accepted', 'in_progress'])
+            ->count();
+
+        $completed30d = ServiceRequest::where('worker_id', $wid)
+            ->where('status', 'completed')
+            ->whereNotNull('completed_at')
+            ->where('completed_at', '>=', $since)
+            ->count();
+
+        $taglines = [
+            'Sumá ingresos con servicios a domicilio y ventas en tu tienda.',
+            'Cada demanda resuelta suma reputación; la tienda suma pedidos recurrentes.',
+            'Activá disponibilidad y revisá pedidos: el dinero extra está en lo que ya sabés hacer.',
+            'Clientes cerca pagan por urgencia: revisá el feed y tu tienda en el mismo lugar.',
+        ];
+        $tagline = $taglines[(int) (now()->dayOfYear % count($taglines))];
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'has_worker' => true,
+                'worker_id' => $wid,
+                'tagline' => $tagline,
+                'store' => [
+                    'is_seller' => (bool) $worker->is_seller,
+                    'store_name' => $worker->store_name,
+                    'orders_pending' => $ordersPending,
+                    'orders_paid_30d' => $ordersPaid30d,
+                    'revenue_paid_30d_clp' => $revenuePaid30d,
+                ],
+                'services' => [
+                    'active_jobs' => $activeJobs,
+                    'completed_30d' => $completed30d,
+                ],
+                'reputation' => [
+                    'rating' => $worker->rating !== null ? (float) $worker->rating : null,
+                    'rating_count' => (int) $worker->rating_count,
+                    'total_jobs_completed' => (int) ($worker->total_jobs_completed ?? 0),
+                ],
+            ],
+        ]);
     }
 }
