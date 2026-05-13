@@ -86,6 +86,9 @@ class ExpertController extends Controller
             $finalRadius = $finalRadius ?? end($steps);
         }
 
+        [$premiumPoints, $premiumWorkerIds] = $this->resolvePremiumStorePins((float) $lat, (float) $lng, (float) $finalRadius, $categoryIds);
+        $workers = $workers->reject(fn ($w) => in_array((int) $w->id, $premiumWorkerIds, true));
+
         // Silent logging - TEMPORALMENTE DESHABILITADO
         /*
         SearchLog::log(
@@ -133,50 +136,6 @@ class ExpertController extends Controller
                 return null;
             }
         })->filter()->values();
-
-        // MVP: 1 tienda premium hardcodeada (dondemorales.cl)
-        $premiumPoints = collect();
-        try {
-            $premiumWorkerId = (int) env('PREMIUM_STORE_WORKER_ID', 2); // proxy con location de worker MVP
-            $premiumUrl = (string) env('PREMIUM_STORE_URL', 'https://dondemorales.cl');
-            $premiumName = (string) env('PREMIUM_STORE_NAME', 'DonDeMorales');
-            $premiumAvatar = env('PREMIUM_STORE_AVATAR', null);
-
-            $storeCoord = Worker::where('id', $premiumWorkerId)
-                ->selectRaw('ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng')
-                ->first();
-
-            if ($storeCoord && $storeCoord->lat && $storeCoord->lng) {
-                $distKm = $this->haversineKm((float) $lat, (float) $lng, (float) $storeCoord->lat, (float) $storeCoord->lng);
-                if ($distKm <= (float) $finalRadius) {
-                    $premiumPoints->push([
-                        'id' => 9001,
-                        'user_id' => null,
-                        'pos' => [
-                            'lat' => (float) $storeCoord->lat + (mt_rand(-10, 10) * 0.0001), // fuzzed
-                            'lng' => (float) $storeCoord->lng + (mt_rand(-10, 10) * 0.0001), // fuzzed
-                        ],
-                        'name' => $premiumName,
-                        'avatar' => $premiumAvatar,
-                        'price' => 0,
-                        'category_color' => '#a855f7',
-                        'category_slug' => null,
-                        'category_name' => 'Tienda Premium',
-                        'fresh_score' => 5,
-                        'status' => 'active',
-                        'pin_type' => 'premium_store',
-                        'microcopy' => 'Tienda Premium',
-                        'has_video' => false,
-                        'is_seller' => false,
-                        'store_name' => $premiumName,
-                        'store_plan' => 'premium',
-                        'store_url' => $premiumUrl,
-                    ]);
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::warning('[ExpertController] Error premium store', ['error' => $e->getMessage()]);
-        }
 
         return response()->json([
             'status' => 'success',
@@ -447,6 +406,144 @@ class ExpertController extends Controller
         $a = sin($dLat / 2) * sin($dLat / 2) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) * sin($dLng / 2);
         $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
         return $earthRadiusKm * $c;
+    }
+
+    /**
+     * Pins premium desde BD (varios workers) o, si no hay ninguno, fallback por variables PREMIUM_STORE_*.
+     *
+     * @return array{0: \Illuminate\Support\Collection, 1: array<int, int>} [puntos, worker_ids a excluir del listado normal]
+     */
+    private function resolvePremiumStorePins(float $lat, float $lng, float $radiusKm, array $categoryIds): array
+    {
+        try {
+            [$fromDb, $idsFromDb] = $this->premiumPinsFromDatabase($lat, $lng, $radiusKm, $categoryIds);
+            if ($fromDb->isNotEmpty()) {
+                return [$fromDb, $idsFromDb];
+            }
+
+            return $this->premiumPinsFromEnv($lat, $lng, $radiusKm);
+        } catch (\Throwable $e) {
+            Log::warning('[ExpertController] resolvePremiumStorePins', ['error' => $e->getMessage()]);
+
+            return [collect(), []];
+        }
+    }
+
+    /**
+     * @return array{0: \Illuminate\Support\Collection, 1: array<int, int>}
+     */
+    private function premiumPinsFromDatabase(float $lat, float $lng, float $radiusKm, array $categoryIds): array
+    {
+        $q = Worker::query()
+            ->where('show_premium_pin_on_map', true)
+            ->whereNotNull('premium_external_store_url')
+            ->where('premium_external_store_url', '!=', '')
+            ->whereNotNull('location')
+            ->with(['user:id,name,nickname,avatar'])
+            ->near($lat, $lng, $radiusKm)
+            ->select(['workers.*'])
+            ->selectRaw('ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng');
+
+        if (! empty($categoryIds)) {
+            $q->whereIn('category_id', $categoryIds);
+        }
+
+        $rows = $q->get();
+        $points = collect();
+        $ids = [];
+
+        foreach ($rows as $pw) {
+            if ($pw->lat === null || $pw->lng === null) {
+                continue;
+            }
+            $ids[] = (int) $pw->id;
+            $displayName = trim((string) ($pw->store_name ?: '')) !== ''
+                ? (string) $pw->store_name
+                : ($pw->user?->nickname ?? $this->shortName($pw->user?->name ?? 'Tienda'));
+            $url = trim((string) $pw->premium_external_store_url);
+            $mapId = 900000 + (int) $pw->id;
+
+            $points->push([
+                'id' => $mapId,
+                'user_id' => null,
+                'linked_worker_id' => (int) $pw->id,
+                'pos' => [
+                    'lat' => (float) $pw->lat + (mt_rand(-10, 10) * 0.0001),
+                    'lng' => (float) $pw->lng + (mt_rand(-10, 10) * 0.0001),
+                ],
+                'name' => $displayName,
+                'avatar' => $pw->user?->avatar,
+                'price' => 0,
+                'category_color' => '#a855f7',
+                'category_slug' => null,
+                'category_name' => 'Tienda Premium',
+                'fresh_score' => 5,
+                'status' => 'active',
+                'pin_type' => 'premium_store',
+                'microcopy' => 'Tienda Premium',
+                'has_video' => false,
+                'is_seller' => false,
+                'store_name' => $displayName,
+                'store_plan' => 'premium',
+                'store_url' => $url,
+            ]);
+        }
+
+        return [$points, $ids];
+    }
+
+    /**
+     * @return array{0: \Illuminate\Support\Collection, 1: array<int, int>}
+     */
+    private function premiumPinsFromEnv(float $lat, float $lng, float $radiusKm): array
+    {
+        $premiumWorkerId = (int) env('PREMIUM_STORE_WORKER_ID', 2);
+        $premiumUrl = (string) env('PREMIUM_STORE_URL', 'https://dondemorales.cl');
+        $premiumName = (string) env('PREMIUM_STORE_NAME', 'DonDeMorales');
+        $premiumAvatar = env('PREMIUM_STORE_AVATAR', null);
+
+        $storeCoord = Worker::where('id', $premiumWorkerId)
+            ->selectRaw('ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng')
+            ->first();
+
+        if (! $storeCoord || $storeCoord->lat === null || $storeCoord->lng === null) {
+            return [collect(), []];
+        }
+
+        $distKm = $this->haversineKm($lat, $lng, (float) $storeCoord->lat, (float) $storeCoord->lng);
+        if ($distKm > $radiusKm) {
+            return [collect(), []];
+        }
+
+        $mapId = 900000 + $premiumWorkerId;
+
+        return [
+            collect([[
+                'id' => $mapId,
+                'user_id' => null,
+                'linked_worker_id' => $premiumWorkerId,
+                'pos' => [
+                    'lat' => (float) $storeCoord->lat + (mt_rand(-10, 10) * 0.0001),
+                    'lng' => (float) $storeCoord->lng + (mt_rand(-10, 10) * 0.0001),
+                ],
+                'name' => $premiumName,
+                'avatar' => $premiumAvatar,
+                'price' => 0,
+                'category_color' => '#a855f7',
+                'category_slug' => null,
+                'category_name' => 'Tienda Premium',
+                'fresh_score' => 5,
+                'status' => 'active',
+                'pin_type' => 'premium_store',
+                'microcopy' => 'Tienda Premium',
+                'has_video' => false,
+                'is_seller' => false,
+                'store_name' => $premiumName,
+                'store_plan' => 'premium',
+                'store_url' => $premiumUrl,
+            ]]),
+            [$premiumWorkerId],
+        ];
     }
 
     private function maskPhone(string $phone): string

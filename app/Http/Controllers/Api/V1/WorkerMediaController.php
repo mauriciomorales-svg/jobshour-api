@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Worker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class WorkerMediaController extends Controller
 {
@@ -238,8 +239,49 @@ class WorkerMediaController extends Controller
                 ]),
                 'is_seller' => (bool) $worker->is_seller,
                 'store_name' => $worker->store_name,
+                'show_premium_pin_on_map' => (bool) ($worker->show_premium_pin_on_map ?? false),
+                'premium_external_store_url' => $worker->premium_external_store_url,
                 'social_links' => $worker->social_links ?? [],
             ],
+        ]);
+    }
+
+    /**
+     * PUT /api/v1/worker/premium-map-pin
+     * Pin morado en el mapa que abre la web externa de la tienda (handoff JobsHours).
+     */
+    public function updatePremiumMapPin(Request $request)
+    {
+        $validated = $request->validate([
+            'show_premium_pin_on_map' => 'required|boolean',
+            'premium_external_store_url' => [
+                'nullable',
+                'string',
+                'max:500',
+                Rule::requiredIf($request->boolean('show_premium_pin_on_map')),
+                Rule::when($request->boolean('show_premium_pin_on_map'), ['url']),
+            ],
+        ]);
+
+        $worker = Worker::where('user_id', $request->user()->id)->first();
+        if (! $worker) {
+            return response()->json(['status' => 'error', 'message' => 'Perfil de trabajador no encontrado'], 404);
+        }
+
+        $show = (bool) $validated['show_premium_pin_on_map'];
+        $url = isset($validated['premium_external_store_url'])
+            ? trim((string) $validated['premium_external_store_url'])
+            : '';
+
+        $worker->update([
+            'show_premium_pin_on_map' => $show,
+            'premium_external_store_url' => $show ? $url : null,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'show_premium_pin_on_map' => (bool) $worker->show_premium_pin_on_map,
+            'premium_external_store_url' => $worker->premium_external_store_url,
         ]);
     }
 

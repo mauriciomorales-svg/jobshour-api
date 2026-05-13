@@ -31,6 +31,8 @@ class Worker extends Model
         'is_verified',
         'is_seller',
         'store_name',
+        'show_premium_pin_on_map',
+        'premium_external_store_url',
         'social_links',
     ];
 
@@ -41,6 +43,7 @@ class Worker extends Model
         'active_route' => 'array',
         'is_verified' => 'boolean',
         'is_seller' => 'boolean',
+        'show_premium_pin_on_map' => 'boolean',
         'hourly_rate' => 'decimal:2',
         'rating' => 'decimal:1',
         'last_seen_at' => 'datetime',

@@ -244,6 +244,8 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::post('/worker/categories', [WorkerMediaController::class, 'updateCategories']);
     Route::put('/worker/social-links', [WorkerMediaController::class, 'updateSocialLinks']);
     Route::get('/worker/me', [WorkerMediaController::class, 'getWorkerData']);
+    Route::post('/worker/store-toggle', [WorkerMediaController::class, 'toggleStore']);
+    Route::put('/worker/premium-map-pin', [WorkerMediaController::class, 'updatePremiumMapPin']);
     
     // Worker Experiences
     Route::get('/worker/experiences/suggestions', [\App\Http\Controllers\Api\V1\WorkerExperienceController::class, 'searchSuggestions']);
