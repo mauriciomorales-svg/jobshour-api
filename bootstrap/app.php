@@ -14,6 +14,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->api(prepend: [
+            \App\Http\Middleware\AssignRequestId::class,
+        ]);
         $middleware->statefulApi();
         
         // Deshabilitar CSRF para rutas API y web root

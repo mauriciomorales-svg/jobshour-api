@@ -103,10 +103,12 @@ Route::prefix('v1')->group(function () {
     Route::get('/workers/{worker}/reviews', [ReviewController::class, 'index']);
 
     // Webhook Mercado Pago - Público (MP no envía auth)
-    Route::post('/payments/mp/webhook', [\App\Http\Controllers\Api\MercadoPagoController::class, 'webhook']);
+    Route::post('/payments/mp/webhook', [\App\Http\Controllers\Api\MercadoPagoController::class, 'webhook'])
+        ->middleware('throttle:mercadopago-webhook');
 
     // Tienda (Store Orders) - Público (compras sin login + webhook + confirmación comprador)
-    Route::post('/store/webhook', [StoreOrderController::class, 'webhook']);
+    Route::post('/store/webhook', [StoreOrderController::class, 'webhook'])
+        ->middleware('throttle:mercadopago-webhook');
     Route::post('/store/orders', [StoreOrderController::class, 'create']);
     Route::get('/store/orders/{id}', [StoreOrderController::class, 'showPublic']);
     Route::post('/store/orders/{id}/confirm', [StoreOrderController::class, 'confirm']);

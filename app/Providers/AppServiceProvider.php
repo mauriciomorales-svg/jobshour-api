@@ -56,6 +56,11 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(120)->by($request->ip());
         });
 
+        // Webhooks Mercado Pago (MP reintenta; margen alto por IP)
+        RateLimiter::for('mercadopago-webhook', function (Request $request) {
+            return Limit::perMinute(300)->by($request->ip());
+        });
+
         // FCM Push Notifications
         Event::listen(ServiceRequestCreated::class, [SendPushNotifications::class, 'handleDemandCreated']);
         Event::listen(ServiceRequestUpdated::class, [SendPushNotifications::class, 'handleDemandUpdated']);

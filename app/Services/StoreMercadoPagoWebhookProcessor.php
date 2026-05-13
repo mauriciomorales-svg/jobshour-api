@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\IntegratedQuote;
+use App\Models\MpWebhookEvent;
 use App\Models\StoreOrder;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -62,6 +63,21 @@ class StoreMercadoPagoWebhookProcessor
 
         if (! $order) {
             return 'order_not_found';
+        }
+
+        $mpStatus = (string) ($pay['status'] ?? '');
+        $extRefStr = is_scalar($externalRef) ? (string) $externalRef : '';
+        $isNewEvent = MpWebhookEvent::record(
+            $paymentId,
+            'store_order',
+            $mpStatus,
+            $extRefStr
+        );
+        if (! $isNewEvent) {
+            Log::info('[StoreOrder] Webhook store_order repetido (idempotente)', [
+                'payment_id' => $paymentId,
+                'order_id' => $order->id,
+            ]);
         }
 
         $wasPending = $order->status === 'pending';
