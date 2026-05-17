@@ -127,6 +127,9 @@ class ExpertController extends Controller
                     'has_video' => ($w->videos_count ?? 0) > 0,
                     'is_seller' => (bool) ($w->is_seller ?? false),
                     'store_name' => $w->store_name ?? null,
+                    'public_store_host' => ($w->public_store_host && $w->public_store_host_verified_at)
+                        ? $w->public_store_host
+                        : null,
                 ];
             } catch (\Exception $e) {
                 Log::error('Error mapping worker', [
@@ -271,6 +274,9 @@ class ExpertController extends Controller
                 'last_seen' => $this->resolveLastSeen($expert),
                 'is_seller' => (bool) ($expert->is_seller ?? false),
                 'store_name' => $expert->store_name ?? null,
+                'public_store_host' => ($expert->public_store_host && $expert->public_store_host_verified_at)
+                    ? $expert->public_store_host
+                    : null,
             ],
         ]);
     }

@@ -71,13 +71,17 @@ php artisan horizon:terminate 2>/dev/null || true
 
 # ── 7. Supervisor: instalar/actualizar configs y reiniciar procesos ───────────
 log "=== [7/9] Supervisor ==="
-cp "$APP_DIR/deploy/supervisor-horizon.conf"      /etc/supervisor/conf.d/jobshours-horizon.conf
-cp "$APP_DIR/deploy/supervisor-reverb.conf"       /etc/supervisor/conf.d/jobshours-reverb.conf
-cp "$APP_DIR/deploy/supervisor-queue-worker.conf" /etc/supervisor/conf.d/jobshours-worker.conf
-supervisorctl reread
-supervisorctl update
-supervisorctl restart jobshours-horizon || true
-supervisorctl restart jobshours-reverb  || true
+if [[ -d /etc/supervisor/conf.d ]] && command -v supervisorctl >/dev/null 2>&1; then
+    cp "$APP_DIR/deploy/supervisor-horizon.conf"      /etc/supervisor/conf.d/jobshours-horizon.conf
+    cp "$APP_DIR/deploy/supervisor-reverb.conf"       /etc/supervisor/conf.d/jobshours-reverb.conf
+    cp "$APP_DIR/deploy/supervisor-queue-worker.conf" /etc/supervisor/conf.d/jobshours-worker.conf
+    supervisorctl reread
+    supervisorctl update
+    supervisorctl restart jobshours-horizon || true
+    supervisorctl restart jobshours-reverb  || true
+else
+    log "⚠️  Supervisor no disponible; omitiendo reinicio de Horizon/Reverb"
+fi
 
 # ── 8. Reload Nginx (sin downtime) ───────────────────────────────────────────
 log "=== [8/9] Nginx reload ==="
