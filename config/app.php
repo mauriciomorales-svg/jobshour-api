@@ -8,6 +8,8 @@ return [
     // URL pública para retornos de pagos/webhooks/redirecciones.
     // Ej: Flow / Flow.cl usa esto para urlReturn.
     'frontend_url' => env('FRONTEND_URL', env('APP_URL', 'http://localhost')),
+    /** Dominio principal del sitio (sin protocolo). Bloqueado para `public_store_host` de tiendas. */
+    'primary_public_host' => strtolower(trim((string) env('PRIMARY_PUBLIC_HOST', 'jobshours.com'))),
     'timezone' => env('APP_TIMEZONE', 'America/Santiago'),
     'locale' => env('APP_LOCALE', 'es'),
     'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en'),

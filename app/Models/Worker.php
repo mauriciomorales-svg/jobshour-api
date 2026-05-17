@@ -34,6 +34,9 @@ class Worker extends Model
         'show_premium_pin_on_map',
         'premium_external_store_url',
         'social_links',
+        'public_store_host',
+        'public_store_host_verified_at',
+        'public_store_host_verify_token',
     ];
 
     protected $casts = [
@@ -47,11 +50,12 @@ class Worker extends Model
         'hourly_rate' => 'decimal:2',
         'rating' => 'decimal:1',
         'last_seen_at' => 'datetime',
+        'public_store_host_verified_at' => 'datetime',
     ];
 
     protected $appends = [];
 
-    protected $hidden = ['location'];
+    protected $hidden = ['location', 'public_store_host_verify_token'];
 
     public function user(): BelongsTo
     {

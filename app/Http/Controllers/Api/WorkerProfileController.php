@@ -501,4 +501,137 @@ class WorkerProfileController extends Controller
 
         return response()->json(['jobs' => $jobs]);
     }
+
+    /**
+     * Estado del dominio público de la tienda (solo el dueño).
+     */
+    public function getStoreHost(Request $request)
+    {
+        $user = $request->user();
+        $worker = Worker::where('user_id', $user->id)->first();
+
+        if (! $worker) {
+            return response()->json(['message' => 'Worker not found'], 404);
+        }
+
+        $host = $worker->public_store_host;
+        $verified = (bool) $worker->public_store_host_verified_at;
+        $token = $worker->public_store_host_verify_token;
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'public_store_host' => $host,
+                'verified' => $verified,
+                'verify_token' => $verified ? null : $token,
+                'txt_fqdn' => $host && ! $verified && $token ? '_jobshours-challenge.'.$host : null,
+            ],
+        ]);
+    }
+
+    public function updateStoreHost(Request $request)
+    {
+        $user = $request->user();
+        $worker = Worker::where('user_id', $user->id)->first();
+
+        if (! $worker) {
+            return response()->json(['message' => 'Worker not found'], 404);
+        }
+
+        if (! $worker->is_seller) {
+            return response()->json(['message' => 'Activá la tienda (vendedor) primero.'], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'host' => ['required', 'string', 'max:253', 'regex:/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $host = strtolower(trim((string) $request->input('host')));
+        $host = rtrim($host, '.');
+
+        $primary = (string) config('app.primary_public_host', 'jobshours.com');
+        if ($host === $primary || $host === 'www.'.$primary) {
+            return response()->json(['message' => 'No podés usar el dominio principal de la plataforma.'], 422);
+        }
+
+        $existing = Worker::where('public_store_host', $host)->where('id', '!=', $worker->id)->first();
+        if ($existing) {
+            return response()->json(['message' => 'Ese dominio ya está registrado por otra cuenta.'], 422);
+        }
+
+        $token = bin2hex(random_bytes(16));
+
+        $worker->update([
+            'public_store_host' => $host,
+            'public_store_host_verified_at' => null,
+            'public_store_host_verify_token' => $token,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'public_store_host' => $worker->public_store_host,
+                'verified' => false,
+                'verify_token' => $token,
+                'txt_name' => '_jobshours-challenge',
+                'txt_fqdn' => '_jobshours-challenge.'.$host,
+            ],
+        ]);
+    }
+
+    public function verifyStoreHost(Request $request)
+    {
+        $user = $request->user();
+        $worker = Worker::where('user_id', $user->id)->first();
+
+        if (! $worker) {
+            return response()->json(['message' => 'Worker not found'], 404);
+        }
+
+        if (! $worker->public_store_host || ! $worker->public_store_host_verify_token) {
+            return response()->json(['message' => 'Guardá un dominio primero.'], 422);
+        }
+
+        $host = $worker->public_store_host;
+        $token = $worker->public_store_host_verify_token;
+        $fqdn = '_jobshours-challenge.'.$host;
+
+        $found = false;
+        if (function_exists('dns_get_record')) {
+            $records = @dns_get_record($fqdn, DNS_TXT);
+            if (is_array($records)) {
+                foreach ($records as $rec) {
+                    $txt = isset($rec['txt']) ? (string) $rec['txt'] : '';
+                    if ($txt !== '' && (str_contains($txt, $token) || trim($txt) === $token)) {
+                        $found = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (! $found) {
+            return response()->json([
+                'message' => 'No encontramos el registro TXT. Creá un TXT en '.$fqdn.' con el valor indicado y esperá unos minutos a que propaguen los DNS.',
+                'txt_fqdn' => $fqdn,
+            ], 422);
+        }
+
+        $worker->update([
+            'public_store_host_verified_at' => now(),
+            'public_store_host_verify_token' => null,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'public_store_host' => $worker->public_store_host,
+                'verified' => true,
+            ],
+        ]);
+    }
 }

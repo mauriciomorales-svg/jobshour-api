@@ -32,6 +32,8 @@ use App\Http\Controllers\Api\V1\OnboardingController;
 use App\Http\Controllers\Api\V1\StoreOrderController;
 use App\Http\Controllers\Api\V1\IntegratedQuoteController;
 use App\Http\Controllers\Api\V1\ProductAnalyticsController;
+use App\Http\Controllers\Api\V1\StoreHostController;
+use App\Http\Controllers\Api\V1\StorePartnerDemandController;
 
 use App\Http\Controllers\Api\WorkerProfileController;
 use App\Http\Controllers\Api\FriendsController;
@@ -98,6 +100,7 @@ Route::prefix('v1')->group(function () {
     // Búsqueda inteligente (Weighted + Fuzzy)
     Route::get('/search', [SearchController::class, 'search']);
     Route::get('/store/search', [\App\Http\Controllers\Api\V1\StoreSearchController::class, 'search']);
+    Route::get('/store-host/resolve', [StoreHostController::class, 'resolve'])->middleware('throttle:120,1');
 
     // Reseñas de workers - Público (cualquiera puede ver el historial)
     Route::get('/workers/{worker}/reviews', [ReviewController::class, 'index']);
@@ -138,6 +141,10 @@ Route::prefix('v1')->group(function () {
 
     // Analytics producto (Next forward o cliente) — throttle por IP
     Route::post('/analytics/events', [ProductAnalyticsController::class, 'store'])->middleware('throttle:analytics');
+
+    // Tienda externa: publicar demanda tras pago (Bearer token de integración, ver `php artisan store-demand:integration`)
+    Route::post('/integrations/store-demand', [StorePartnerDemandController::class, 'store'])
+        ->middleware('throttle:partner-store-demand');
 
     // P0-10: Verificación de QR dinámico (público)
     Route::get('/workers/verify/{token}', [WorkerProfileController::class, 'verifyQRToken']);
@@ -364,4 +371,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Visibility Toggle
     Route::post('/worker/visibility', [WorkerProfileController::class, 'toggleVisibility']);
     Route::get('/worker/visibility', [WorkerProfileController::class, 'getVisibility']);
+
+    // Dominio / subdominio público de la tienda (DNS TXT)
+    Route::get('/worker/store-host', [WorkerProfileController::class, 'getStoreHost']);
+    Route::put('/worker/store-host', [WorkerProfileController::class, 'updateStoreHost']);
+    Route::post('/worker/store-host/verify', [WorkerProfileController::class, 'verifyStoreHost']);
 });
