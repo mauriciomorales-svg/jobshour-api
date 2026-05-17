@@ -40,14 +40,17 @@ php artisan storage:link --force 2>/dev/null || true
 
 # ── 5. Limpiar y optimizar caches ────────────────────────────────────────────
 log "=== [5/9] Limpiar y optimizar caches ==="
+if [[ -f "$APP_DIR/deploy/sync-pg-password-from-env.php" ]]; then
+  log "Alinear contraseña PostgreSQL con .env"
+  php "$APP_DIR/deploy/sync-pg-password-from-env.php" || log "⚠️  sync-pg-password falló"
+fi
 php artisan config:clear
 php artisan cache:clear
 php artisan route:clear
 php artisan view:clear
-# En producción: compilar caches para máxima velocidad
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
+rm -f bootstrap/cache/config.php
+# No usar config:cache: en este VPS deja DB_PASSWORD vacío y rompe la API (500 en /api/v1/*).
+php artisan view:cache 2>/dev/null || true
 
 # ── 6. Reiniciar queue workers (Horizon recarga el config) ───────────────────
 log "=== [6/9] Reiniciar queue workers ==="
@@ -72,7 +75,7 @@ nginx -t && systemctl reload nginx
 log "=== [9/9] Health check ==="
 sleep 3
 
-HEALTH_URL="http://127.0.0.1/api/health"
+HEALTH_URL="http://127.0.0.1:8095/api/v1/health"
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" || echo "000")
 
 if [[ "$HTTP_STATUS" == "200" ]]; then
