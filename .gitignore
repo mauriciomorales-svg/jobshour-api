@@ -8,6 +8,7 @@
 /storage/framework/sessions/*
 /storage/framework/views/*
 /storage/logs/*
+/storage/firebase/*.json
 /bootstrap/cache/*
 *.log
 .idea/

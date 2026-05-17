@@ -20,8 +20,20 @@ log "Commit actual (rollback target): $ROLLBACK_COMMIT"
 
 # ── 1. Pull ───────────────────────────────────────────────────────────────────
 log "=== [1/9] Pull latest code ==="
+FIREBASE_JSON="$APP_DIR/storage/firebase/jobshours-firebase-adminsdk-fbsvc-a52be09a7f.json"
+FIREBASE_BACKUP="/var/lib/jobshours/firebase-adminsdk.json"
+if [[ -f "$FIREBASE_JSON" ]]; then
+    mkdir -p /var/lib/jobshours
+    cp -a "$FIREBASE_JSON" "$FIREBASE_BACKUP"
+    log "Firebase credentials respaldadas en $FIREBASE_BACKUP"
+fi
 git fetch origin
 git reset --hard origin/master
+if [[ -f "$FIREBASE_BACKUP" ]]; then
+    mkdir -p "$(dirname "$FIREBASE_JSON")"
+    cp -a "$FIREBASE_BACKUP" "$FIREBASE_JSON"
+    log "Firebase credentials restauradas desde backup"
+fi
 
 NEW_COMMIT=$(git rev-parse HEAD)
 log "Nuevo commit: $NEW_COMMIT"
