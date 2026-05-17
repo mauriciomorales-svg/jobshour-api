@@ -150,6 +150,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/workers/verify/{token}', [WorkerProfileController::class, 'verifyQRToken']);
 
     // Flow - Webhooks públicos (sin autenticación)
+    // Flow standby: confirm/return para pagos antiguos (init solo con PAYMENT_GATEWAY=flow)
     Route::get('/payments/flow/confirm', [\App\Http\Controllers\Api\V1\FlowController::class, 'confirm']);
     Route::post('/payments/flow/confirm', [\App\Http\Controllers\Api\V1\FlowController::class, 'confirm']);
     Route::match(['get', 'post'], '/payments/flow/return', [\App\Http\Controllers\Api\V1\FlowController::class, 'retorno']);
@@ -207,7 +208,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::post('/demand/publish', [DemandMapController::class, 'publish'])->middleware('throttle:demand');
     Route::post('/demand/{serviceRequest}/take', [DemandMapController::class, 'take'])->middleware('throttle:demand');
 
-    // Flow legacy (init deshabilitado salvo PAYMENT_GATEWAY=flow; confirm/return para enlaces antiguos)
+    // Flow standby: init responde 503 salvo PAYMENT_GATEWAY=flow (ver docs/FLOW-STANDBY.md)
     Route::post('/payments/flow/init', [\App\Http\Controllers\Api\V1\FlowController::class, 'iniciar']);
 
     // Mercado Pago — pasarela activa en web y tienda

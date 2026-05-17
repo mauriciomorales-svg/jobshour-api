@@ -9,15 +9,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * FlowController - Integración con Flow.cl para pagos
- * 
- * ⚠️ CONFIGURACIÓN PENDIENTE:
- * - Las claves de Flow deben configurarse en .env
- * - FLOW_API_KEY: Clave pública de Flow
- * - FLOW_SECRET_KEY: Clave privada de Flow
- * - FLOW_SANDBOX: true para pruebas, false para producción
- * 
- * Ver: PENDIENTE_CONFIGURACION_FLOW.md
+ * Flow.cl — integración en STANDBY (pasarela activa: Mercado Pago).
+ *
+ * - init: solo si PAYMENT_GATEWAY=flow (si no → 503).
+ * - confirm/return: siguen activos para enlaces y pagos antiguos.
+ *
+ * Ver docs/FLOW-STANDBY.md
  */
 class FlowController extends Controller
 {
@@ -30,7 +27,7 @@ class FlowController extends Controller
         if ((string) env('PAYMENT_GATEWAY', 'mercadopago') !== 'flow') {
             return response()->json([
                 'success' => false,
-                'message' => 'Flow está pendiente y deshabilitado. Usa Mercado Pago.',
+                'message' => 'Flow está en standby. Pasarela activa: Mercado Pago.',
             ], 503);
         }
 
