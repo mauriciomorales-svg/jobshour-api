@@ -21,7 +21,7 @@ class ReviewController extends Controller
             $validated = $request->validate([
                 'service_request_id' => 'required|exists:service_requests,id',
                 'stars' => 'required|integer|min:1|max:5',
-                'comment' => 'nullable|string|max:500',
+                'comment' => 'required|string|min:10|max:500',
             ]);
 
             $user = $request->user();
