@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\ServiceRequest;
 use App\Models\Worker;
+use App\Services\DemandPublishService;
 use App\Support\Geofence;
 use App\Support\JobshourSla;
 use Illuminate\Http\Request;
@@ -142,25 +143,8 @@ class DemandMapController extends Controller
 
             \Log::info('DemandMapController::publish - Validation passed', $validated);
 
-            if (Geofence::enabled() && ! Geofence::isInsideZone((float) $validated['lat'], (float) $validated['lng'])) {
-                return response()->json([
-                    'message' => 'La ubicación está fuera de la zona piloto activa.',
-                    'zone' => Geofence::zoneInfo(),
-                ], 422);
-            }
-
             $user = $request->user();
             $ttl = $validated['ttl_minutes'] ?? 30;
-            
-            // Mapear urgencia del frontend a valores permitidos por DB
-            $urgencyMap = [
-                'low' => 'normal',
-                'medium' => 'normal',
-                'high' => 'urgent',
-                'normal' => 'normal',
-                'urgent' => 'urgent',
-            ];
-            $dbUrgency = $urgencyMap[$validated['urgency'] ?? 'medium'] ?? 'normal';
 
             // Handle image upload
             $imagePath = null;
@@ -169,80 +153,17 @@ class DemandMapController extends Controller
                 \Log::info('DemandMapController::publish - Image uploaded', ['path' => $imagePath]);
             }
 
-            // Construir payload según el tipo
-            $payload = [];
-            if ($validated['type'] === 'ride_share') {
-                $role = $validated['travel_role'] ?? 'passenger';
-                $payload = [
-                    'travel_role' => $role,
-                    'seats' => $validated['seats'] ?? 1,
-                    'departure_time' => $validated['departure_time'] ?? null,
-                    'destination_name' => $validated['destination_name'] ?? $validated['delivery_address'] ?? null,
-                    'vehicle_type' => $validated['payload']['vehicle_type'] ?? null,
-                    // Driver extras
-                    'origin_address' => $validated['pickup_address'] ?? null,
-                    'destination_address' => $validated['delivery_address'] ?? null,
-                ];
-            } elseif ($validated['type'] === 'express_errand') {
-                $payload = [
-                    'store_name' => $validated['store_name'] ?? null,
-                    'items_count' => $validated['items_count'] ?? null,
-                    'load_type' => $validated['load_type'] ?? null,
-                    'requires_vehicle' => $validated['requires_vehicle'] ?? false,
-                ];
+            try {
+                $serviceRequest = app(DemandPublishService::class)->publish($user, $validated, $imagePath);
+            } catch (\InvalidArgumentException $e) {
+                if ($e->getMessage() === 'outside_zone') {
+                    return response()->json([
+                        'message' => 'La ubicación está fuera de la zona piloto activa.',
+                        'zone' => Geofence::zoneInfo(),
+                    ], 422);
+                }
+                throw $e;
             }
-            
-            // Si viene payload desde el frontend, mergearlo
-            if (!empty($validated['payload'])) {
-                $payload = array_merge($payload, $validated['payload']);
-            }
-
-            // Agregar imagen al payload si se subió
-            if ($imagePath) {
-                $payload['image'] = '/storage/' . $imagePath;
-            }
-
-            \Log::info('DemandMapController::publish - Creating ServiceRequest', [
-                'client_id' => $user->id,
-                'category_id' => $validated['category_id'],
-            ]);
-
-            $serviceRequest = ServiceRequest::create([
-                'client_id' => $user->id,
-                'category_id' => $validated['category_id'],
-                'type' => $validated['type'] ?? 'fixed_job',
-                'travel_role' => $validated['travel_role'] ?? null,
-                'category_type' => $validated['category_type'] ?? 'fixed',
-                'description' => $validated['description'],
-                'offered_price' => array_key_exists('offered_price', $validated) ? $validated['offered_price'] : null,
-                'urgency' => $dbUrgency,
-                'status' => 'pending',
-                'pin_expires_at' => now()->addMinutes($ttl),
-                'payload' => !empty($payload) ? $payload : null,
-                'pickup_address' => $validated['pickup_address'] ?? null,
-                'delivery_address' => $validated['delivery_address'] ?? null,
-                'pickup_lat' => $validated['pickup_lat'] ?? null,
-                'pickup_lng' => $validated['pickup_lng'] ?? null,
-                'delivery_lat' => $validated['delivery_lat'] ?? null,
-                'delivery_lng' => $validated['delivery_lng'] ?? null,
-                'scheduled_at' => $validated['scheduled_at'] ?? null,
-                'workers_needed' => $validated['workers_needed'] ?? 1,
-                'recurrence' => $validated['recurrence'] ?? 'once',
-                'recurrence_days' => !empty($validated['recurrence_days']) ? json_encode($validated['recurrence_days']) : null,
-            ]);
-
-            \Log::info('DemandMapController::publish - ServiceRequest created', ['id' => $serviceRequest->id]);
-
-            // Usar lat/lng del request o pickup_lat/pickup_lng si están disponibles
-            $locationLat = $validated['pickup_lat'] ?? $validated['lat'];
-            $locationLng = $validated['pickup_lng'] ?? $validated['lng'];
-
-            DB::update(
-                "UPDATE service_requests SET client_location = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
-                [$locationLng, $locationLat, $serviceRequest->id]
-            );
-
-            $serviceRequest->refresh();
 
             \Log::info('DemandMapController::publish - Success', ['request_id' => $serviceRequest->id]);
 

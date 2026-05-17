@@ -51,6 +51,16 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by($request->user()?->id ?? $request->ip());
         });
 
+        // Integración tienda → demanda (Bearer de integración): más margen que el modal; clave por hash del token
+        RateLimiter::for('partner-store-demand', function (Request $request) {
+            $token = $request->bearerToken();
+            $key = is_string($token) && $token !== ''
+                ? 'pt_'.hash('sha256', $token)
+                : 'pt_ip_'.$request->ip();
+
+            return Limit::perMinute(60)->by($key);
+        });
+
         // Eventos producto (retención / embudo) — 120/min por IP
         RateLimiter::for('analytics', function (Request $request) {
             return Limit::perMinute(120)->by($request->ip());

@@ -45,6 +45,11 @@ docker exec -d jobshour-api php artisan reverb:start
 
 ## API Endpoints
 
+### Tienda externa → demanda (mapa)
+- Guía completa: **`docs/INTEGRACION-TIENDA-DEMANDA.md`** (token, lista blanca IP, idempotencia, cURL, logs).
+- `POST /api/v1/integrations/store-demand` — `Authorization: Bearer` con token creado por `php artisan store-demand:integration`. Rate limit **`partner-store-demand`** (60 req/min por token; ver `AppServiceProvider`).
+- Comandos: `store-demand:integration`, `store-demand:integration-rotate`, `store-demand:integration-ips` (ver `.env.example`).
+
 ### Product analytics (retención / embudo web)
 - `POST /api/v1/analytics/events` — Body JSON: `{ "name": string, "payload": object, "t": number }` (timestamp cliente en ms). Con cabecera opcional `Authorization: Bearer <Sanctum>` se guarda `user_id` para cohortes.
 - Si `ANALYTICS_INGEST_SECRET` está definido en `.env`, enviar cabecera `X-Analytics-Secret` con el mismo valor.
