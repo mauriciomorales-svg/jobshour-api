@@ -71,10 +71,11 @@ php artisan horizon:terminate 2>/dev/null || true
 
 # ── 7. Supervisor: instalar/actualizar configs y reiniciar procesos ───────────
 log "=== [7/9] Supervisor ==="
-if [[ -d /etc/supervisor/conf.d ]] && command -v supervisorctl >/dev/null 2>&1; then
-    cp "$APP_DIR/deploy/supervisor-horizon.conf"      /etc/supervisor/conf.d/jobshours-horizon.conf
-    cp "$APP_DIR/deploy/supervisor-reverb.conf"       /etc/supervisor/conf.d/jobshours-reverb.conf
-    cp "$APP_DIR/deploy/supervisor-queue-worker.conf" /etc/supervisor/conf.d/jobshours-worker.conf
+SUPERVISOR_CONF_DIR="/etc/supervisor/conf.d"
+if command -v supervisorctl >/dev/null 2>&1 && mkdir -p "$SUPERVISOR_CONF_DIR" 2>/dev/null && [[ -d "$SUPERVISOR_CONF_DIR" ]]; then
+    cp "$APP_DIR/deploy/supervisor-horizon.conf"      "$SUPERVISOR_CONF_DIR/jobshours-horizon.conf"
+    cp "$APP_DIR/deploy/supervisor-reverb.conf"       "$SUPERVISOR_CONF_DIR/jobshours-reverb.conf"
+    cp "$APP_DIR/deploy/supervisor-queue-worker.conf" "$SUPERVISOR_CONF_DIR/jobshours-worker.conf"
     supervisorctl reread
     supervisorctl update
     supervisorctl restart jobshours-horizon || true
