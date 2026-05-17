@@ -231,6 +231,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/notifications/preferences', [\App\Http\Controllers\Api\V1\NotificationController::class, 'preferences']);
     Route::post('/notifications/preferences', [\App\Http\Controllers\Api\V1\NotificationController::class, 'preferences']);
     Route::post('/notifications/register-token', [NotificationController::class, 'registerToken']);
+    Route::post('/notifications/register-fcm-web', [NotificationController::class, 'registerFcmWeb']);
     Route::post('/notifications/unregister-token', [NotificationController::class, 'unregisterToken']);
     Route::post('/notifications/{notification}/read', [\App\Http\Controllers\Api\V1\NotificationController::class, 'markAsRead']);
     Route::delete('/notifications/{notification}', [\App\Http\Controllers\Api\V1\NotificationController::class, 'destroy']);

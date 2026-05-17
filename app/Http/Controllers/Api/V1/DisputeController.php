@@ -7,16 +7,29 @@ use App\Models\ServiceDispute;
 use App\Models\ServiceRequest;
 use App\Models\Worker;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class DisputeController extends Controller
 {
     public function reportIncident(Request $request, ServiceRequest $serviceRequest)
     {
         $user = $request->user();
-        
-        // Validar que el usuario sea el worker del servicio
-        if (!$serviceRequest->worker || $serviceRequest->worker->user_id !== $user->id) {
+
+        $isClient = (int) $serviceRequest->client_id === (int) $user->id;
+        $isWorker = $serviceRequest->worker
+            && (int) $serviceRequest->worker->user_id === (int) $user->id;
+
+        if (!$isClient && !$isWorker) {
             return response()->json(['error' => 'No autorizado'], 403);
+        }
+
+        $existing = ServiceDispute::where('service_request_id', $serviceRequest->id)
+            ->whereIn('status', ['pending', 'approved'])
+            ->exists();
+        if ($existing) {
+            return response()->json([
+                'error' => 'Ya existe un reporte abierto para esta solicitud.',
+            ], 422);
         }
 
         $validated = $request->validate([
@@ -24,16 +37,22 @@ class DisputeController extends Controller
             'description' => 'required|string|max:1000',
             'evidence_photos' => 'nullable|array',
             'evidence_photos.*' => 'string',
+            'evidence' => 'nullable|image|max:5120',
             'worker_lat' => 'nullable|numeric',
             'worker_lng' => 'nullable|numeric',
         ]);
 
-        // Calcular compensación automática para no_show
+        $evidencePhotos = $validated['evidence_photos'] ?? [];
+        if ($request->hasFile('evidence')) {
+            $path = $request->file('evidence')->store('dispute-evidence', 'public');
+            $evidencePhotos[] = Storage::disk('public')->url($path);
+        }
+
         $compensationAmount = null;
         $autoApproved = false;
 
-        if ($validated['reason'] === 'no_show') {
-            // Verificar si el worker está cerca del destino (radio de 100m)
+        // Compensación automática solo cuando reporta el trabajador (no_show + proximidad).
+        if ($isWorker && $validated['reason'] === 'no_show') {
             $isNearDestination = $this->verifyProximity(
                 $validated['worker_lat'] ?? null,
                 $validated['worker_lng'] ?? null,
@@ -42,8 +61,8 @@ class DisputeController extends Controller
             );
 
             if ($isNearDestination) {
-                // Compensación automática del 30%
-                $compensationAmount = $serviceRequest->final_price * 0.30;
+                $base = $serviceRequest->final_price ?? $serviceRequest->offered_price ?? 0;
+                $compensationAmount = $base * 0.30;
                 $autoApproved = true;
             }
         }
@@ -53,7 +72,7 @@ class DisputeController extends Controller
             'reported_by' => $user->id,
             'reason' => $validated['reason'],
             'description' => $validated['description'],
-            'evidence_photos' => $validated['evidence_photos'] ?? null,
+            'evidence_photos' => count($evidencePhotos) > 0 ? $evidencePhotos : null,
             'worker_lat' => $validated['worker_lat'] ?? null,
             'worker_lng' => $validated['worker_lng'] ?? null,
             'compensation_amount' => $compensationAmount,
@@ -62,10 +81,9 @@ class DisputeController extends Controller
             'resolved_at' => $autoApproved ? now() : null,
         ]);
 
-        // Si fue auto-aprobado, cancelar el servicio y restaurar disponibilidad
         if ($autoApproved) {
             $serviceRequest->update(['status' => 'cancelled']);
-            
+
             $worker = Worker::find($serviceRequest->worker_id);
             if ($worker && $worker->availability_status === 'intermediate') {
                 $worker->update(['availability_status' => 'active']);
@@ -75,9 +93,9 @@ class DisputeController extends Controller
         return response()->json([
             'status' => 'success',
             'dispute' => $dispute,
-            'message' => $autoApproved 
-                ? "Incidente aprobado automáticamente. Compensación de $" . number_format($compensationAmount, 0, ',', '.') 
-                : 'Incidente reportado. Será revisado por el equipo de soporte.',
+            'message' => $autoApproved
+                ? 'Incidente registrado. Compensación aplicada según las reglas del servicio.'
+                : 'Reporte enviado. Te contactaremos en 24–48 h hábiles si hace falta.',
         ]);
     }
 
@@ -87,19 +105,17 @@ class DisputeController extends Controller
             return false;
         }
 
-        // Fórmula de Haversine para calcular distancia
-        $earthRadius = 6371000; // metros
+        $earthRadius = 6371000;
         $dLat = deg2rad($destLat - $workerLat);
         $dLng = deg2rad($destLng - $workerLng);
-        
-        $a = sin($dLat/2) * sin($dLat/2) +
+
+        $a = sin($dLat / 2) * sin($dLat / 2) +
              cos(deg2rad($workerLat)) * cos(deg2rad($destLat)) *
-             sin($dLng/2) * sin($dLng/2);
-        
-        $c = 2 * atan2(sqrt($a), sqrt(1-$a));
+             sin($dLng / 2) * sin($dLng / 2);
+
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
         $distance = $earthRadius * $c;
 
-        // Retornar true si está dentro de 100 metros
         return $distance <= 100;
     }
 

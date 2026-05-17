@@ -2,13 +2,12 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Events\NewMessage;
 use App\Events\ChatMessageNotify;
+use App\Events\NewMessage;
 use App\Http\Controllers\Controller;
+use App\Listeners\SendPushNotifications;
 use App\Models\Message;
 use App\Models\ServiceRequest;
-use App\Models\User;
-use App\Services\FCMService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -179,24 +178,12 @@ class ChatController extends Controller
 
             $message->load('sender:id,name,avatar,email');
 
-            // Intentar broadcast pero no fallar si falla
             try {
                 $event = new NewMessage($message);
                 broadcast($event)->toOthers();
-                $event->handle();
-            } catch (\Throwable $e) {
-                Log::warning('ChatController::send - Error en broadcast', [
-                    'service_request_id' => $serviceRequest->id,
-                    'message_id' => $message->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
 
-            // Push FCM al destinatario
-            try {
                 $recipientId = $isClient ? $serviceRequest->worker?->user_id : $serviceRequest->client_id;
-                if ($recipientId && $recipientId !== $user->id) {
-                    // Aviso realtime directo al canal de usuario (fallback de notificaciones de chat)
+                if ($recipientId && (int) $recipientId !== (int) $user->id) {
                     broadcast(new ChatMessageNotify(
                         recipientUserId: (int) $recipientId,
                         requestId: (int) $serviceRequest->id,
@@ -207,17 +194,14 @@ class ChatController extends Controller
                         senderEmail: $user->email ? (string) $user->email : null
                     ));
 
-                    $recipient = User::find($recipientId);
-                    if ($recipient?->fcm_token) {
-                        $displayBody = $type === 'image' ? '📷 Imagen' : (strlen($body) > 80 ? substr($body, 0, 80) . '...' : $body);
-                        (new FCMService())->sendToUser($recipient, $user->name, $displayBody, [
-                            'type' => 'chat_message',
-                            'request_id' => (string) $serviceRequest->id,
-                        ]);
-                    }
+                    app(SendPushNotifications::class)->handleNewMessage($event);
                 }
             } catch (\Throwable $e) {
-                Log::warning('ChatController::send - Error en FCM push', ['error' => $e->getMessage()]);
+                Log::warning('ChatController::send - Error en broadcast/push', [
+                    'service_request_id' => $serviceRequest->id,
+                    'message_id' => $message->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
             return response()->json([

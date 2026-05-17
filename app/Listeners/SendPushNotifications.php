@@ -62,6 +62,7 @@ class SendPushNotifications
             [
                 'type' => 'new_demand',
                 'demand_id' => (string) $sr->id,
+                'request_id' => (string) $sr->id,
                 'lat' => (string) $coords->lat,
                 'lng' => (string) $coords->lng,
             ],
@@ -84,6 +85,7 @@ class SendPushNotifications
         $data = [
             'type' => 'demand_update',
             'demand_id' => (string) $sr->id,
+            'request_id' => (string) $sr->id,
             'status' => $sr->status,
         ];
 
@@ -131,22 +133,39 @@ class SendPushNotifications
     public function handleNewMessage(NewMessage $event): void
     {
         $message = $event->message;
-        $sender = $message->sender;
-        $recipientId = $message->recipient_id;
+        $message->loadMissing('sender:id,name', 'serviceRequest.worker');
 
-        if (!$recipientId || !$sender) return;
+        $serviceRequest = $message->serviceRequest;
+        $sender = $message->sender;
+        if (! $serviceRequest || ! $sender) {
+            return;
+        }
+
+        $recipientId = (int) $message->sender_id === (int) $serviceRequest->client_id
+            ? $serviceRequest->worker?->user_id
+            : $serviceRequest->client_id;
+
+        if (! $recipientId || (int) $recipientId === (int) $message->sender_id) {
+            return;
+        }
 
         $recipient = \App\Models\User::find($recipientId);
-        if (!$recipient) return;
+        if (! $recipient) {
+            return;
+        }
 
-        $senderName = $sender->name ?? $sender->nickname ?? 'Alguien';
+        $senderName = $sender->name ?? 'Usuario';
+        $preview = $message->type === 'image'
+            ? '📷 Imagen'
+            : mb_substr((string) ($message->body ?? ''), 0, 100);
 
         $this->fcm->sendToUser(
             $recipient,
-            "💬 {$senderName}",
-            mb_substr($message->content ?? 'Te envió un mensaje', 0, 100),
+            $senderName,
+            $preview,
             [
-                'type' => 'new_message',
+                'type' => 'chat_message',
+                'request_id' => (string) $serviceRequest->id,
                 'message_id' => (string) $message->id,
                 'sender_id' => (string) $sender->id,
             ]
