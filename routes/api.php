@@ -207,10 +207,10 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::post('/demand/publish', [DemandMapController::class, 'publish'])->middleware('throttle:demand');
     Route::post('/demand/{serviceRequest}/take', [DemandMapController::class, 'take'])->middleware('throttle:demand');
 
-    // Pagos con Flow (mantenido, se activa con PAYMENT_GATEWAY=flow)
+    // Flow legacy (init deshabilitado salvo PAYMENT_GATEWAY=flow; confirm/return para enlaces antiguos)
     Route::post('/payments/flow/init', [\App\Http\Controllers\Api\V1\FlowController::class, 'iniciar']);
 
-    // Pagos con Mercado Pago (activo por defecto con PAYMENT_GATEWAY=mercadopago)
+    // Mercado Pago — pasarela activa en web y tienda
     Route::get('/payments/mp/brick-config', [\App\Http\Controllers\Api\MercadoPagoController::class, 'brickConfig']);
     Route::post('/payments/mp/create-link', [\App\Http\Controllers\Api\MercadoPagoController::class, 'createPaymentLink']);
     Route::post('/payments/mp/demand-boost', [\App\Http\Controllers\Api\MercadoPagoController::class, 'createDemandBoostCheckout']);
