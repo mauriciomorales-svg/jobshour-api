@@ -109,5 +109,5 @@ log "✅ Deploy API completado"
 log "   Commit: $NEW_COMMIT"
 log "   Log:    $LOG_FILE"
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-supervisorctl status
+supervisorctl status 2>/dev/null || true
 php artisan horizon:status 2>/dev/null || true
