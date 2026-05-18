@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Events\ServiceRequestCreated;
-use App\Events\ServiceRequestUpdated;
 use App\Events\PinDiedEvent;
 use App\Events\LocationUpdated;
 use App\Http\Controllers\Controller;
@@ -127,17 +125,13 @@ class ServiceRequestController extends Controller
                 throw new \Exception('Error al crear solicitud');
             }
 
-            // Intentar broadcast pero no fallar si falla
             try {
-                $event = new ServiceRequestCreated($sr);
-                broadcast($event);
-                $event->handle();
+                \App\Services\ServiceRequestNotificationDispatcher::assigned($sr);
             } catch (\Exception $e) {
-                \Log::warning('ServiceRequestController::store - Error en broadcast', [
+                \Log::warning('ServiceRequestController::store - Error en notificación', [
                     'error' => $e->getMessage(),
-                    'request_id' => $sr->id
+                    'request_id' => $sr->id,
                 ]);
-                // Continuar aunque falle el broadcast
             }
 
             return response()->json([
@@ -264,14 +258,11 @@ class ServiceRequestController extends Controller
                 $serviceRequest->update(['status' => 'rejected']);
             }
 
-            // Broadcast actualización - no fallar si falla
             try {
-                $event = new ServiceRequestUpdated($serviceRequest->fresh());
-                broadcast($event);
-                $event->handle();
+                \App\Services\ServiceRequestNotificationDispatcher::updated($serviceRequest->fresh());
             } catch (\Exception $e) {
-                \Log::warning('ServiceRequestController::respond - Error en broadcast Update', [
-                    'error' => $e->getMessage()
+                \Log::warning('ServiceRequestController::respond - Error en notificación', [
+                    'error' => $e->getMessage(),
                 ]);
             }
 
@@ -327,8 +318,14 @@ class ServiceRequestController extends Controller
             'client_approved_adjustment' => false,
         ]);
 
-        // Notificar al cliente (aquí iría push notification)
-        
+        try {
+            \App\Services\ServiceRequestNotificationDispatcher::priceAdjustmentPending($serviceRequest->fresh());
+        } catch (\Exception $e) {
+            \Log::warning('ServiceRequestController::adjustPrice - Error en notificación', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return response()->json([
             'status' => 'success',
             'message' => 'Ajuste de precio propuesto. Esperando aprobación del cliente.',
@@ -353,6 +350,14 @@ class ServiceRequestController extends Controller
             'client_approved_adjustment' => true,
             'final_price' => $serviceRequest->adjusted_price,
         ]);
+
+        try {
+            \App\Services\ServiceRequestNotificationDispatcher::priceAdjustmentApproved($serviceRequest->fresh());
+        } catch (\Exception $e) {
+            \Log::warning('ServiceRequestController::approveAdjustment - Error en notificación', [
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return response()->json([
             'status' => 'success',
@@ -449,14 +454,11 @@ class ServiceRequestController extends Controller
                 }
             }
 
-            // Broadcast actualización - no fallar si falla
             try {
-                $event = new ServiceRequestUpdated($serviceRequest->fresh());
-                broadcast($event);
-                $event->handle();
+                \App\Services\ServiceRequestNotificationDispatcher::updated($serviceRequest->fresh());
             } catch (\Exception $e) {
-                \Log::warning('ServiceRequestController::complete - Error en broadcast', [
-                    'error' => $e->getMessage()
+                \Log::warning('ServiceRequestController::complete - Error en notificación', [
+                    'error' => $e->getMessage(),
                 ]);
             }
 
@@ -555,20 +557,10 @@ class ServiceRequestController extends Controller
             }
         }
 
-        $event = new ServiceRequestUpdated($serviceRequest);
         try {
-            broadcast($event);
+            \App\Services\ServiceRequestNotificationDispatcher::updated($serviceRequest->fresh());
         } catch (\Throwable $e) {
-            \Log::warning('ServiceRequestController::cancel - broadcast failed (non-critical)', [
-                'request_id' => $serviceRequest->id ?? null,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        try {
-            $event->handle();
-        } catch (\Throwable $e) {
-            \Log::warning('ServiceRequestController::cancel - handle failed (non-critical)', [
+            \Log::warning('ServiceRequestController::cancel - notify failed (non-critical)', [
                 'request_id' => $serviceRequest->id ?? null,
                 'error' => $e->getMessage(),
             ]);

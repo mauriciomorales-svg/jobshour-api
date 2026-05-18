@@ -67,6 +67,11 @@ return Application::configure(basePath: dirname(__DIR__))
             ->withoutOverlapping()
             ->runInBackground();
 
+        $schedule->command('jobshour:sla-accept-reminders')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->runInBackground();
+
         // Snapshot de métricas para el dashboard de Horizon
         $schedule->command('horizon:snapshot')->everyFiveMinutes();
 

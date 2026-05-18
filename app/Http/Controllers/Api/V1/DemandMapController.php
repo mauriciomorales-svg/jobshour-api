@@ -498,13 +498,10 @@ class DemandMapController extends Controller
             );
         });
 
-        // Broadcast nueva solicitud.
         try {
-            $event = new \App\Events\ServiceRequestCreated($newRequest);
-            broadcast($event);
-            $event->handle();
+            \App\Services\ServiceRequestNotificationDispatcher::assigned($newRequest);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::warning("DemandMapController::{$caller} - Error broadcast", [
+            \Illuminate\Support\Facades\Log::warning("DemandMapController::{$caller} - Error notify assigned", [
                 'error' => $e->getMessage(),
                 'request_id' => $newRequest?->id,
             ]);

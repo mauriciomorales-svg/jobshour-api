@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Events\ServiceRequestUpdated;
 use App\Models\ServiceRequest;
+use App\Services\ServiceRequestNotificationDispatcher;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -44,11 +44,9 @@ class ExpirePendingAcceptWindowCommand extends Command
             ]);
 
             try {
-                $event = new ServiceRequestUpdated($sr->fresh());
-                broadcast($event);
-                $event->handle();
+                ServiceRequestNotificationDispatcher::updated($sr->fresh());
             } catch (\Throwable $e) {
-                Log::warning('ExpirePendingAcceptWindow: broadcast/handle failed', [
+                Log::warning('ExpirePendingAcceptWindow: notify failed', [
                     'request_id' => $sr->id,
                     'error' => $e->getMessage(),
                 ]);

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\ServiceRequest;
 use App\Models\Worker;
+use App\Services\ServiceRequestNotificationDispatcher;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -34,6 +35,8 @@ class CheckInactiveJobs extends Command
             // Auto-cancelar por timeout
             $job->update([
                 'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'cancellation_reason' => 'auto_inactivity_timeout',
                 'pause_reason' => 'Auto-cancelado por inactividad (30min sin movimiento GPS ni actividad en chat)',
             ]);
 
@@ -53,8 +56,17 @@ class CheckInactiveJobs extends Command
                 }
             }
 
+            try {
+                ServiceRequestNotificationDispatcher::updated($job->fresh());
+            } catch (\Throwable $e) {
+                Log::warning('CheckInactiveJobs: notify failed', [
+                    'request_id' => $job->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             $cancelledCount++;
-            
+
             Log::info("Job #{$job->id} auto-cancelled due to 30min inactivity");
         }
 

@@ -3,10 +3,14 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\ServiceRequest;
 use App\Models\StoreDemandIntegration;
 use App\Models\StoreDemandPartnerPublish;
+use App\Models\User;
 use App\Services\DemandPublishService;
+use App\Services\StoreDemandBuyerResolver;
 use App\Support\Geofence;
+use App\Support\StoreDemandCustomerUrl;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +24,7 @@ use Illuminate\Support\Facades\Log;
  */
 class StorePartnerDemandController extends Controller
 {
-    public function store(Request $request, DemandPublishService $publisher)
+    public function store(Request $request, DemandPublishService $publisher, StoreDemandBuyerResolver $buyerResolver)
     {
         $plain = $request->bearerToken();
         if (! is_string($plain) || strlen($plain) < 24) {
@@ -80,6 +84,9 @@ class StorePartnerDemandController extends Controller
             'seats' => 'nullable|integer|min:1|max:8',
             'destination_name' => 'nullable|string|max:255',
             'departure_time' => 'nullable|date|after:-5 minutes',
+            'buyer_email' => 'nullable|email|max:255',
+            'buyer_name' => 'nullable|string|max:120',
+            'buyer_phone' => 'nullable|string|max:32',
         ]);
 
         $categoryId = $validated['category_id'] ?? $integration->default_category_id;
@@ -101,10 +108,37 @@ class StorePartnerDemandController extends Controller
             default => 'fixed',
         };
 
+        $buyerEmail = isset($validated['buyer_email']) ? strtolower(trim((string) $validated['buyer_email'])) : '';
+        $clientUser = $integration->user;
+        $buyerExisted = null;
+
+        if ($buyerEmail !== '') {
+            try {
+                $resolved = $buyerResolver->resolveOrCreate(
+                    $buyerEmail,
+                    $validated['buyer_name'] ?? null,
+                    $validated['buyer_phone'] ?? null
+                );
+                $clientUser = $resolved['user'];
+                $buyerExisted = $resolved['existed'];
+            } catch (\InvalidArgumentException) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'buyer_email inválido.',
+                ], 422);
+            }
+        }
+
         $extraPayload = [
             'external_order_id' => $validated['external_order_id'],
             'integration_name' => $integration->name,
+            'integration_user_id' => $integration->user_id,
         ];
+        if ($buyerEmail !== '') {
+            $extraPayload['buyer_email'] = $buyerEmail;
+            $extraPayload['buyer_name'] = $validated['buyer_name'] ?? null;
+            $extraPayload['buyer_phone'] = $validated['buyer_phone'] ?? null;
+        }
 
         $publishInput = array_merge($validated, [
             'category_id' => $categoryId,
@@ -118,7 +152,9 @@ class StorePartnerDemandController extends Controller
                 $integration,
                 $dedupeKey,
                 $publisher,
-                $publishInput
+                $publishInput,
+                $clientUser,
+                $buyerExisted
             ) {
                 $existing = StoreDemandPartnerPublish::query()
                     ->where('store_demand_integration_id', $integration->id)
@@ -132,15 +168,16 @@ class StorePartnerDemandController extends Controller
                         'body' => [
                             'status' => 'success',
                             'message' => 'Demanda ya registrada (idempotencia).',
-                            'data' => [
-                                'request_id' => $existing->service_request_id,
-                                'idempotent' => true,
-                            ],
+                            'data' => self::responseDataForRequest(
+                                (int) $existing->service_request_id,
+                                $buyerExisted,
+                                true
+                            ),
                         ],
                     ];
                 }
 
-                $serviceRequest = $publisher->publish($integration->user, $publishInput, null);
+                $serviceRequest = $publisher->publish($clientUser, $publishInput, null);
 
                 try {
                     StoreDemandPartnerPublish::create([
@@ -162,10 +199,11 @@ class StorePartnerDemandController extends Controller
                             'body' => [
                                 'status' => 'success',
                                 'message' => 'Demanda ya registrada (idempotencia).',
-                                'data' => [
-                                    'request_id' => $winner->service_request_id,
-                                    'idempotent' => true,
-                                ],
+                                'data' => self::responseDataForRequest(
+                                    (int) $winner->service_request_id,
+                                    $buyerExisted,
+                                    true
+                                ),
                             ],
                         ];
                     }
@@ -174,16 +212,19 @@ class StorePartnerDemandController extends Controller
 
                 $ttl = $publishInput['ttl_minutes'] ?? 30;
 
+                $data = self::responseDataForRequest(
+                    (int) $serviceRequest->id,
+                    $buyerExisted,
+                    false
+                );
+                $data['pin_expires_at'] = $serviceRequest->pin_expires_at;
+
                 return [
                     'http' => 201,
                     'body' => [
                         'status' => 'success',
                         'message' => 'Publicación creada. Visible en el mapa por '.$ttl.' minutos',
-                        'data' => [
-                            'request_id' => $serviceRequest->id,
-                            'pin_expires_at' => $serviceRequest->pin_expires_at,
-                            'idempotent' => false,
-                        ],
+                        'data' => $data,
                     ],
                 ];
             });
@@ -210,6 +251,115 @@ class StorePartnerDemandController extends Controller
         $this->logStoreDemandAudit($request, $integration, $validated, $dedupeKey, $responsePayload);
 
         return response()->json($responsePayload['body'], $responsePayload['http']);
+    }
+
+    /**
+     * Estado de una solicitud publicada por esta integración (para sincronizar ecommerce).
+     *
+     * GET /api/v1/integrations/service-request/{requestId}
+     */
+    public function showRequest(Request $request, int $requestId)
+    {
+        $integration = $this->resolveIntegration($request);
+        if ($integration instanceof \Illuminate\Http\JsonResponse) {
+            return $integration;
+        }
+
+        $owns = StoreDemandPartnerPublish::query()
+            ->where('store_demand_integration_id', $integration->id)
+            ->where('service_request_id', $requestId)
+            ->exists();
+
+        if (! $owns) {
+            return response()->json(['status' => 'error', 'message' => 'Solicitud no encontrada para esta integración'], 404);
+        }
+
+        $sr = ServiceRequest::query()->find($requestId);
+        if (! $sr) {
+            return response()->json(['status' => 'error', 'message' => 'Solicitud no encontrada'], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'request_id' => $sr->id,
+                'status' => $sr->status,
+                'status_label' => self::statusLabel((string) $sr->status),
+                'payment_status' => $sr->payment_status,
+                'worker_id' => $sr->worker_id,
+                'offered_price' => $sr->offered_price,
+                'external_order_id' => data_get($sr->payload, 'external_order_id'),
+                'customer_url' => StoreDemandCustomerUrl::forRequest($sr->id),
+            ],
+        ]);
+    }
+
+    private function resolveIntegration(Request $request): StoreDemandIntegration|\Illuminate\Http\JsonResponse
+    {
+        $plain = $request->bearerToken();
+        if (! is_string($plain) || strlen($plain) < 24) {
+            return response()->json(['status' => 'error', 'message' => 'Token inválido'], 401);
+        }
+
+        $hash = hash('sha256', $plain);
+        $integration = StoreDemandIntegration::query()
+            ->where('token_hash', $hash)
+            ->where('active', true)
+            ->first();
+
+        if (! $integration) {
+            return response()->json(['status' => 'error', 'message' => 'Token inválido'], 401);
+        }
+
+        $clientIp = $request->ip() ?? '';
+        if (! $integration->clientIpIsAllowed($clientIp)) {
+            return response()->json(['status' => 'error', 'message' => 'Acceso denegado'], 403);
+        }
+
+        return $integration;
+    }
+
+    private static function statusLabel(string $status): string
+    {
+        return match ($status) {
+            'pending' => 'Buscando repartidor',
+            'accepted' => 'Repartidor asignado',
+            'in_progress' => 'En camino',
+            'completed' => 'Entregado',
+            'cancelled' => 'Cancelado',
+            default => $status,
+        };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function responseDataForRequest(int $requestId, ?bool $buyerExisted, bool $idempotent): array
+    {
+        $sr = ServiceRequest::query()->find($requestId);
+        $client = $sr?->client_id
+            ? User::query()->find($sr->client_id)
+            : null;
+
+        $data = [
+            'request_id' => $requestId,
+            'idempotent' => $idempotent,
+            'customer_url' => StoreDemandCustomerUrl::forRequest($requestId),
+        ];
+
+        if ($client) {
+            $data['client_user_id'] = $client->id;
+            $data['client_email'] = $client->email;
+        }
+
+        if ($buyerExisted !== null) {
+            $data['buyer_assigned'] = true;
+            $data['buyer_existed'] = $buyerExisted;
+        } else {
+            $data['buyer_assigned'] = false;
+        }
+
+        return $data;
     }
 
     /**

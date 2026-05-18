@@ -101,6 +101,8 @@ class DemandPublishService
 
         $serviceRequest->refresh();
 
+        ServiceRequestNotificationDispatcher::published($serviceRequest);
+
         return $serviceRequest;
     }
 }
