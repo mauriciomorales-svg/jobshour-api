@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\ServiceRequest;
 use App\Models\StoreDemandIntegration;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -131,5 +132,76 @@ class StorePartnerDemandTest extends TestCase
         ], ['Authorization' => 'Bearer '.$plain]);
 
         $response->assertStatus(201);
+    }
+
+    public function test_buyer_email_asigna_cliente_final(): void
+    {
+        $storeUser = User::factory()->create(['type' => 'employer']);
+        $category = Category::factory()->create();
+        $plain = 'jdh_test_partner_token_'.str_repeat('b', 32);
+        StoreDemandIntegration::query()->create([
+            'name' => 'DondeMorales',
+            'token_hash' => hash('sha256', $plain),
+            'user_id' => $storeUser->id,
+            'default_category_id' => $category->id,
+            'active' => true,
+        ]);
+
+        $buyerEmail = 'comprador-'.uniqid().'@test.cl';
+
+        $response = $this->postJson('/api/v1/integrations/store-demand', [
+            'external_order_id' => 'dm-buyer-1',
+            'description' => 'Envío pedido tienda',
+            'lat' => -37.6672,
+            'lng' => -72.5730,
+            'offered_price' => 3500,
+            'buyer_email' => $buyerEmail,
+            'buyer_name' => 'María Compradora',
+            'buyer_phone' => '+56912345678',
+        ], ['Authorization' => 'Bearer '.$plain]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.buyer_assigned', true)
+            ->assertJsonPath('data.buyer_existed', false)
+            ->assertJsonPath('data.client_email', $buyerEmail);
+
+        $requestId = (int) $response->json('data.request_id');
+        $sr = ServiceRequest::query()->findOrFail($requestId);
+        $this->assertNotEquals($storeUser->id, $sr->client_id);
+
+        $buyer = User::query()->where('email', $buyerEmail)->first();
+        $this->assertNotNull($buyer);
+        $this->assertSame($buyer->id, $sr->client_id);
+        $this->assertNotEmpty($response->json('data.customer_url'));
+    }
+
+    public function test_buyer_email_existente_reutiliza_usuario(): void
+    {
+        $storeUser = User::factory()->create(['type' => 'employer']);
+        $buyer = User::factory()->create(['type' => 'employer', 'email' => 'cliente-existente@test.cl']);
+        $category = Category::factory()->create();
+        $plain = 'jdh_test_partner_token_'.str_repeat('c', 32);
+        StoreDemandIntegration::query()->create([
+            'name' => 'Tienda',
+            'token_hash' => hash('sha256', $plain),
+            'user_id' => $storeUser->id,
+            'default_category_id' => $category->id,
+            'active' => true,
+        ]);
+
+        $response = $this->postJson('/api/v1/integrations/store-demand', [
+            'external_order_id' => 'dm-buyer-2',
+            'description' => 'Delivery',
+            'lat' => -37.6672,
+            'lng' => -72.5730,
+            'buyer_email' => $buyer->email,
+        ], ['Authorization' => 'Bearer '.$plain]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.buyer_existed', true)
+            ->assertJsonPath('data.client_user_id', $buyer->id);
+
+        $sr = ServiceRequest::query()->findOrFail((int) $response->json('data.request_id'));
+        $this->assertSame($buyer->id, $sr->client_id);
     }
 }

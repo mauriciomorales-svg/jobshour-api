@@ -178,10 +178,26 @@ class SendPushNotifications
         switch ($sr->status) {
             case 'taken':
             case 'accepted':
-                $title = 'Trabajo aceptado';
-                $body = "{$workerName} aceptó tu solicitud";
+                if (self::isStoreDelivery($sr)) {
+                    $title = 'Repartidor asignado';
+                    $body = "{$workerName} tomó tu envío DondeMorales. Pronto saldrá hacia ti.";
+                } else {
+                    $title = 'Trabajo aceptado';
+                    $body = "{$workerName} aceptó tu solicitud";
+                }
                 $data['type'] = 'request_accepted';
                 $email = true;
+                break;
+
+            case 'in_progress':
+                if (self::isStoreDelivery($sr)) {
+                    $title = 'Tu envío va en camino';
+                    $body = "{$workerName} está llevando tu pedido.";
+                } else {
+                    $title = 'Servicio en curso';
+                    $body = "{$workerName} está realizando tu solicitud";
+                }
+                $data['type'] = 'delivery_en_route';
                 break;
 
             case 'rejected':
@@ -191,8 +207,13 @@ class SendPushNotifications
                 break;
 
             case 'completed':
-                $title = 'Servicio completado';
-                $body = "Califica tu experiencia con {$workerName}";
+                if (self::isStoreDelivery($sr)) {
+                    $title = 'Pedido entregado';
+                    $body = 'Tu compra DondeMorales fue entregada. ¡Gracias!';
+                } else {
+                    $title = 'Servicio completado';
+                    $body = "Califica tu experiencia con {$workerName}";
+                }
                 $data['type'] = 'request_completed';
                 $email = true;
                 break;
@@ -297,6 +318,16 @@ class SendPushNotifications
                 'sender_id' => (string) $sender->id,
             ]
         );
+    }
+
+    private static function isStoreDelivery(ServiceRequest $sr): bool
+    {
+        if ($sr->type === 'express_errand') {
+            return true;
+        }
+
+        return data_get($sr->payload, 'source') === 'dondemorales'
+            || data_get($sr->payload, 'external_order_id') !== null;
     }
 
     private function serviceTypeLabel(ServiceRequest $sr): string

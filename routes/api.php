@@ -145,6 +145,9 @@ Route::prefix('v1')->group(function () {
     // Tienda externa: publicar demanda tras pago (Bearer token de integración, ver `php artisan store-demand:integration`)
     Route::post('/integrations/store-demand', [StorePartnerDemandController::class, 'store'])
         ->middleware('throttle:partner-store-demand');
+    Route::get('/integrations/service-request/{requestId}', [StorePartnerDemandController::class, 'showRequest'])
+        ->whereNumber('requestId')
+        ->middleware('throttle:partner-store-demand');
 
     // P0-10: Verificación de QR dinámico (público)
     Route::get('/workers/verify/{token}', [WorkerProfileController::class, 'verifyQRToken']);

@@ -628,6 +628,12 @@ class ServiceRequestController extends Controller
             'paused_at' => null,
         ]);
 
+        try {
+            \App\Services\ServiceRequestNotificationDispatcher::updated($serviceRequest->fresh());
+        } catch (\Exception $e) {
+            \Log::warning('ServiceRequestController::resume - notify failed', ['error' => $e->getMessage()]);
+        }
+
         // Volver a estado busy
         $worker = Worker::find($serviceRequest->worker_id);
         if ($worker && $worker->availability_status === 'active') {

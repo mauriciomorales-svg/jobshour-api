@@ -16,7 +16,7 @@ Este documento describe la **API servidor**.
 ## 1. Requisitos
 
 - Migraciones aplicadas (`store_demand_integrations`, `store_demand_partner_publishes`, `allowed_ips`).
-- Un **usuario JobsHours** (`users.id`) que será el **cliente titular** de la demanda (suele ser una cuenta de la tienda).
+- Un **usuario JobsHours** (`users.id`) vinculado a la integración (cuenta de la tienda / partner). Si enviás **`buyer_email`**, el **comprador final** queda como `client_id` y puede pagar el mandado en la app; si no, la demanda queda a nombre del usuario de la integración (comportamiento legacy).
 - Opcional: **categoría por defecto** en la integración para no enviar `category_id` en cada POST.
 
 ---
@@ -92,12 +92,14 @@ Si la integración **no** tiene `default_category_id`, agregar **`category_id`**
 | `ttl_minutes` | 5–120; por defecto 30. |
 | `type` | `express_errand` (default), `fixed_job`, `ride_share`. |
 | `store_name`, `pickup_address`, `delivery_address`, `pickup_lat`, `pickup_lng`, `delivery_lat`, `delivery_lng` | Mandado / delivery. |
+| `buyer_email` | Email del **comprador final**. Si se envía, la demanda queda con `client_id` de ese usuario (se crea cuenta `employer` si no existe). Así el cliente paga el mandado en JobsHours desde Mis solicitudes. |
+| `buyer_name`, `buyer_phone` | Opcionales; nombre y teléfono del comprador. |
 | `idempotency_key` | Si se envía, sustituye a `external_order_id` como clave de idempotencia (reintentos de webhook). |
 
 ### Respuestas
 
-- **201:** demanda creada. `data.request_id`, `data.pin_expires_at`, `data.idempotent: false`.
-- **200:** misma clave de idempotencia que un pedido ya registrado. `data.idempotent: true`, mismo `request_id`.
+- **201:** demanda creada. `data.request_id`, `data.pin_expires_at`, `data.idempotent: false`, `data.customer_url` (deep link para el comprador), `data.client_user_id`, `data.buyer_assigned`, `data.buyer_existed`.
+- **200:** misma clave de idempotencia que un pedido ya registrado. `data.idempotent: true`, mismo `request_id`, mismos campos de cliente.
 - **401:** Bearer ausente o token inválido.
 - **403:** IP no permitida (lista blanca activa).
 - **422:** validación, categoría faltante, o geofence (punto fuera de zona piloto si está activa).
