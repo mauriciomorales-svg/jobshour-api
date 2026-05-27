@@ -245,7 +245,7 @@ class MercadoPagoController extends Controller
             'transaction_amount' => $amount,
             'description'        => 'JobsHours - Servicio #' . $serviceRequest->id,
             'payment_method_id'  => 'visa', // se sobreescribe desde el brick
-            'capture'            => false,
+            'capture'            => MercadoPagoServicePaymentHelper::shouldCaptureImmediately() ? true : false,
             'external_reference' => (string) $serviceRequest->id,
             'notification_url'   => config('app.url') . '/api/v1/payments/mp/webhook',
             'metadata'           => [
@@ -339,7 +339,7 @@ class MercadoPagoController extends Controller
             'installments'       => $request->installments,
             'payment_method_id'  => $request->payment_method_id,
             'issuer_id'          => $issuerId,
-            'capture'            => false,
+            'capture'            => MercadoPagoServicePaymentHelper::shouldCaptureImmediately() ? true : false,
             'external_reference' => (string) $serviceRequest->id,
             'notification_url'   => config('app.url') . '/api/v1/payments/mp/webhook',
             'payer'              => $payer,

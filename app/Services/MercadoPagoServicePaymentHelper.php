@@ -26,6 +26,13 @@ class MercadoPagoServicePaymentHelper
             : (string) ($preference['init_point'] ?? '');
     }
 
+    /** En sandbox MP no admite retención (capture:false); en producción JobsHours retiene fondos. */
+    public static function shouldCaptureImmediately(): bool
+    {
+        return (bool) config('mercadopago.use_sandbox_checkout', false)
+            || config('app.env') !== 'production';
+    }
+
     private function accessToken(): string
     {
         return trim((string) (config('mercadopago.access_token') ?? ''));
@@ -69,6 +76,8 @@ class MercadoPagoServicePaymentHelper
             $updates['payment_status'] = 'completed';
             $updates['paid_at'] = $serviceRequest->paid_at ?? now();
         } elseif ($status === 'authorized') {
+            $updates['payment_status'] = 'pending';
+        } elseif (in_array($status, ['pending', 'in_process'], true)) {
             $updates['payment_status'] = 'pending';
         } elseif (in_array($status, ['cancelled', 'rejected', 'refunded'], true)) {
             $updates['payment_status'] = $status === 'refunded' ? 'refunded' : 'failed';
