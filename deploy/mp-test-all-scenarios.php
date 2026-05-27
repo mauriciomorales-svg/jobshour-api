@@ -34,7 +34,7 @@ $scenarios = [
     ['holder' => 'CALL', 'label' => 'Rechazado validación autorizar', 'expect_mp' => ['rejected', 'pending']],
     ['holder' => 'FUND', 'label' => 'Fondos insuficientes', 'expect_mp' => ['rejected']],
     ['holder' => 'SECU', 'label' => 'CVV inválido', 'expect_mp' => ['rejected'], 'security_code' => '000'],
-    ['holder' => 'EXPI', 'label' => 'Fecha vencimiento', 'expect_mp' => ['rejected'], 'expiration_year' => '2020', 'expiration_month' => '01'],
+    ['holder' => 'EXPI', 'label' => 'Fecha vencimiento', 'expect_mp' => ['rejected']],
     ['holder' => 'FORM', 'label' => 'Error formulario', 'expect_mp' => ['rejected']],
     ['holder' => 'INST', 'label' => 'Cuotas inválidas', 'expect_mp' => ['rejected'], 'installments' => 99],
     ['holder' => 'LOCK', 'label' => 'Tarjeta deshabilitada', 'expect_mp' => ['rejected']],
@@ -92,17 +92,20 @@ function createPayment(
     string $token,
     float $amount,
     string $idempotencyKey,
-    int $installments = 1
+    int $installments = 1,
+    string $externalReference = 'mp-scenario-test'
 ): array {
     $payload = [
         'transaction_amount' => $amount,
         'token' => $token,
         'description' => 'JobsHours MP scenario test',
         'installments' => $installments,
-        'payment_method_id' => 'visa',
-        'capture' => false,
-        'external_reference' => 'mp-scenario-test',
-        'payer' => ['email' => 'test-buyer-jobshours@mailinator.com'],
+        'capture' => MercadoPagoServicePaymentHelper::shouldCaptureImmediately(),
+        'external_reference' => $externalReference,
+        'payer' => [
+            'email' => 'comprador_prueba_jobshours@gmail.com',
+            'identification' => ['type' => 'Otro', 'number' => '123456789'],
+        ],
     ];
 
     $response = Http::timeout(30)
@@ -134,7 +137,7 @@ foreach ($scenarios as $scenario) {
         'note' => '',
     ];
 
-    $tokenRes = tokenizeCard($baseUrl, $publicKey, $holder, $scenario);
+    $tokenRes = tokenizeCard($baseUrl, $publicKey, $holder, array_merge($scenario, $scenario['card'] ?? []));
     $row['token_http'] = $tokenRes['http'];
 
     $token = is_array($tokenRes['body']) ? ($tokenRes['body']['id'] ?? null) : null;
@@ -148,7 +151,7 @@ foreach ($scenarios as $scenario) {
     $installments = (int) ($scenario['installments'] ?? 1);
     $idem = 'jh-scenario-' . strtolower($holder) . '-' . bin2hex(random_bytes(4));
 
-    $payRes = createPayment($baseUrl, $accessToken, (string) $token, $payAmount, $idem, $installments);
+    $payRes = createPayment($baseUrl, $accessToken, (string) $token, $payAmount, $idem, $installments, 'mp-scenario-' . strtolower($holder));
     $row['payment_http'] = $payRes['http'];
 
     $body = is_array($payRes['body']) ? $payRes['body'] : [];

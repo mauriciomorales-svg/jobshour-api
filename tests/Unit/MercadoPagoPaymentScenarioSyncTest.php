@@ -4,16 +4,12 @@ namespace Tests\Unit;
 
 use App\Models\ServiceRequest;
 use App\Services\MercadoPagoServicePaymentHelper;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery;
 use Tests\TestCase;
 
 class MercadoPagoPaymentScenarioSyncTest extends TestCase
 {
-    use RefreshDatabase;
-
     /**
-     * Escenarios de titular MP → estado MP → payment_status JobsHours.
-     *
      * @return array<string, array{0: string, 1: string, 2: string}>
      */
     public static function scenarioProvider(): array
@@ -47,10 +43,18 @@ class MercadoPagoPaymentScenarioSyncTest extends TestCase
      */
     public function test_sync_service_request_from_mp_payment(string $holder, string $mpStatus, string $expectedPaymentStatus): void
     {
-        $sr = ServiceRequest::factory()->create([
-            'payment_status' => 'pending',
-            'mp_status' => null,
-        ]);
+        /** @var ServiceRequest&\Mockery\MockInterface $sr */
+        $sr = Mockery::mock(ServiceRequest::class)->makePartial();
+        $sr->payment_status = 'pending';
+        $sr->mp_status = null;
+        $sr->paid_at = null;
+        $sr->shouldReceive('update')->once()->andReturnUsing(function (array $updates) use ($sr) {
+            foreach ($updates as $key => $value) {
+                $sr->{$key} = $value;
+            }
+
+            return true;
+        });
 
         app(MercadoPagoServicePaymentHelper::class)->syncServiceRequestFromMpPayment($sr, [
             'id' => 999001,
@@ -60,7 +64,6 @@ class MercadoPagoPaymentScenarioSyncTest extends TestCase
             'currency_id' => 'CLP',
         ]);
 
-        $sr->refresh();
         $this->assertSame($expectedPaymentStatus, $sr->payment_status, "Holder {$holder} / MP {$mpStatus}");
         $this->assertSame($mpStatus, $sr->mp_status);
     }
