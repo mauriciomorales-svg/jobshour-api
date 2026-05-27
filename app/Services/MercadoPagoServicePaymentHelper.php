@@ -13,6 +13,19 @@ class MercadoPagoServicePaymentHelper
 {
     private string $baseUrl = 'https://api.mercadopago.com';
 
+    /**
+     * @param  array<string, mixed>  $preference  Respuesta POST /checkout/preferences
+     */
+    public static function preferenceInitPoint(array $preference): string
+    {
+        $useSandbox = (bool) config('mercadopago.use_sandbox_checkout', false)
+            || config('app.env') !== 'production';
+
+        return $useSandbox
+            ? (string) ($preference['sandbox_init_point'] ?? $preference['init_point'] ?? '')
+            : (string) ($preference['init_point'] ?? '');
+    }
+
     private function accessToken(): string
     {
         return trim((string) (config('mercadopago.access_token') ?? ''));

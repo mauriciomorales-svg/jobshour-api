@@ -154,14 +154,12 @@ class MercadoPagoController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Respuesta inválida de Mercado Pago'], 502);
         }
 
-        $initPoint = config('app.env') === 'production'
-            ? ($data['init_point'] ?? '')
-            : ($data['sandbox_init_point'] ?? $data['init_point'] ?? '');
+        $initPoint = MercadoPagoServicePaymentHelper::preferenceInitPoint($data);
 
         if ($initPoint === '') {
             Log::error('[MP] Preferencia sin init_point', ['preference_id' => $data['id'] ?? null]);
 
-            return response()->json(['status' => 'error', 'message' => 'Mercado Pago no devolvió URL de pago (revisá APP_ENV vs credenciales prod/test)'], 502);
+            return response()->json(['status' => 'error', 'message' => 'Mercado Pago no devolvió URL de pago (revisá MP_USE_SANDBOX y credenciales prod/test)'], 502);
         }
 
         $serviceRequest->update([
@@ -527,9 +525,7 @@ class MercadoPagoController extends Controller
         }
 
         $data = $response->json();
-        $initPoint = config('app.env') === 'production'
-            ? ($data['init_point'] ?? '')
-            : ($data['sandbox_init_point'] ?? $data['init_point'] ?? '');
+        $initPoint = MercadoPagoServicePaymentHelper::preferenceInitPoint($data);
 
         return response()->json([
             'status' => 'success',
@@ -615,9 +611,7 @@ class MercadoPagoController extends Controller
         }
 
         $data = $response->json();
-        $initPoint = config('app.env') === 'production'
-            ? ($data['init_point'] ?? '')
-            : ($data['sandbox_init_point'] ?? $data['init_point'] ?? '');
+        $initPoint = MercadoPagoServicePaymentHelper::preferenceInitPoint($data);
 
         return response()->json([
             'status'        => 'success',
