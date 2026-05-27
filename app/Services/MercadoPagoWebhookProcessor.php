@@ -89,20 +89,26 @@ class MercadoPagoWebhookProcessor
             Log::info('[MP] Webhook service_payment repetido; re-sincronizando estado', ['mp_id' => $payment['id']]);
         }
 
-        $serviceRequest->update(['mp_status' => $payment['status']]);
+        $helper = app(MercadoPagoServicePaymentHelper::class);
+        if (! $helper->paymentAmountMatches($serviceRequest, $payment)) {
+            Log::error('[MP] Monto de pago no coincide con solicitud', [
+                'sr_id' => $serviceRequestId,
+                'expected' => $helper->expectedChargeClp($serviceRequest),
+                'received' => $payment['transaction_amount'] ?? null,
+                'mp_id' => $payment['id'] ?? null,
+            ]);
+
+            return 'amount_mismatch';
+        }
+
+        $helper->syncServiceRequestFromMpPayment($serviceRequest, $payment);
 
         if ($payment['status'] === 'authorized') {
-            $serviceRequest->update(['payment_status' => 'pending']);
             Log::info('[MP] Pago autorizado (retención)', ['sr_id' => $serviceRequestId]);
         } elseif ($payment['status'] === 'approved') {
-            $serviceRequest->update([
-                'payment_status' => 'completed',
-                'paid_at' => now(),
-            ]);
             Log::info('[MP] Pago capturado, servicio pagado', ['sr_id' => $serviceRequestId]);
-        } elseif (in_array($payment['status'], ['cancelled', 'rejected'], true)) {
-            $serviceRequest->update(['payment_status' => 'failed']);
-            Log::info('[MP] Pago rechazado/cancelado', ['sr_id' => $serviceRequestId]);
+        } elseif (in_array($payment['status'], ['cancelled', 'rejected', 'refunded'], true)) {
+            Log::info('[MP] Pago rechazado/cancelado/reembolsado', ['sr_id' => $serviceRequestId, 'status' => $payment['status']]);
         }
 
         return $isNew ? 'ok' : 'already_processed';

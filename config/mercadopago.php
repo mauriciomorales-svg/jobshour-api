@@ -9,4 +9,6 @@ return [
      * En producción debe ser false para responder rápido a MP y procesar en cola.
      */
     'webhook_sync' => (bool) env('MP_WEBHOOK_SYNC', false),
+    /** Solo local/staging: permitir webhooks sin firma si falta MERCADOPAGO_WEBHOOK_SECRET */
+    'webhook_allow_unsigned' => (bool) env('MP_WEBHOOK_ALLOW_UNSIGNED', false),
 ];

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ProcessMercadoPagoWebhook;
 use App\Models\ServiceRequest;
 use App\Services\FCMService;
+use App\Services\MercadoPagoServicePaymentHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -24,6 +25,12 @@ class MercadoPagoController extends Controller
     {
         $secret = trim((string) config('services.mercadopago.webhook_secret', ''));
         if ($secret === '') {
+            if (app()->environment('production') && ! config('mercadopago.webhook_allow_unsigned', false)) {
+                Log::error('[MP] Webhook rechazado: MERCADOPAGO_WEBHOOK_SECRET vacío en producción');
+
+                return false;
+            }
+
             return true;
         }
 
@@ -373,11 +380,45 @@ class MercadoPagoController extends Controller
             'payment_status'=> 'pending',
         ]);
 
+        app(MercadoPagoServicePaymentHelper::class)->syncServiceRequestFromMpPayment($serviceRequest->fresh(), $data);
+
         return response()->json([
             'status'     => 'success',
             'payment_id' => $data['id'],
             'mp_status'  => $data['status'],
             'amount'     => $amount,
+            'payment_status' => $serviceRequest->fresh()->payment_status,
+        ]);
+    }
+
+    /**
+     * Reembolso total del pago MP de un servicio (cliente o trabajador asignado).
+     */
+    public function refundServicePayment(Request $request, $serviceRequestId)
+    {
+        $serviceRequest = ServiceRequest::with('worker.user')->findOrFail($serviceRequestId);
+        $user = $request->user();
+
+        $isClient = (int) $serviceRequest->client_id === (int) $user->id;
+        $isWorker = $serviceRequest->worker && (int) $serviceRequest->worker->user_id === (int) $user->id;
+        if (! $isClient && ! $isWorker) {
+            return response()->json(['status' => 'error', 'message' => 'No autorizado'], 403);
+        }
+
+        $result = app(MercadoPagoServicePaymentHelper::class)->refundServicePayment($serviceRequest);
+
+        if (! $result['success']) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $result['message'],
+            ], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $result['message'],
+            'mp_refund_id' => $result['mp_refund_id'] ?? null,
+            'payment_status' => $serviceRequest->fresh()->payment_status,
         ]);
     }
 
@@ -410,13 +451,19 @@ class MercadoPagoController extends Controller
         }
 
         $data = $response->json();
+        if (! is_array($data)) {
+            return response()->json(['status' => 'error', 'message' => 'Respuesta inválida de Mercado Pago'], 502);
+        }
 
-        $serviceRequest->update([
+        $helper = app(MercadoPagoServicePaymentHelper::class);
+        $helper->syncServiceRequestFromMpPayment($serviceRequest, $data);
+        $serviceRequest->update(['status' => 'completed']);
+
+        return response()->json([
+            'status' => 'success',
             'mp_status' => $data['status'],
-            'status'    => 'completed',
+            'payment_status' => $serviceRequest->fresh()->payment_status,
         ]);
-
-        return response()->json(['status' => 'success', 'mp_status' => $data['status']]);
     }
 
     /**

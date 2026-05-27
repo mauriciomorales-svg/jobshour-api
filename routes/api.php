@@ -222,6 +222,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::post('/payments/mp/credits-checkout', [\App\Http\Controllers\Api\MercadoPagoController::class, 'createCreditsCheckout']);
     Route::post('/payments/mp/process', [\App\Http\Controllers\Api\MercadoPagoController::class, 'processPayment']);
     Route::post('/payments/mp/capture/{serviceRequestId}', [\App\Http\Controllers\Api\MercadoPagoController::class, 'capturePayment']);
+    Route::post('/payments/mp/refund/{serviceRequestId}', [\App\Http\Controllers\Api\MercadoPagoController::class, 'refundServicePayment']);
     
     // Historial de Pagos
     Route::get('/payments/history', [\App\Http\Controllers\Api\PaymentController::class, 'history']);
