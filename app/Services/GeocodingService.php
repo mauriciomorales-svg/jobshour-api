@@ -2,25 +2,27 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class GeocodingService
 {
+    private const CACHE_DAYS = 30;
+
     /**
-     * Reverse geocode: coords → city/town name.
-     * Uses Nominatim (OpenStreetMap) with aggressive caching.
-     * Returns ['city' => 'Renaico', 'region' => 'Araucanía', 'country' => 'Chile']
+     * Reverse geocode: coords → city/town name (según posición real del usuario).
      */
     public static function reverseGeocode(float $lat, float $lng): array
     {
-        // Round to ~1km precision for file-based cache
         $roundedLat = round($lat, 2);
         $roundedLng = round($lng, 2);
         $cacheFile = storage_path("app/geocode/{$roundedLat}_{$roundedLng}.json");
 
-        // Check file cache (30 days TTL)
-        if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < 2592000) {
-            return json_decode(file_get_contents($cacheFile), true);
+        if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < (self::CACHE_DAYS * 86400)) {
+            $cached = json_decode(file_get_contents($cacheFile), true);
+            if (is_array($cached)) {
+                return $cached;
+            }
         }
 
         $result = ['city' => null, 'region' => null, 'country' => null];
@@ -31,7 +33,7 @@ class GeocodingService
                     'lat' => $lat,
                     'lon' => $lng,
                     'format' => 'jsonv2',
-                    'zoom' => 10,
+                    'zoom' => 14,
                     'accept-language' => 'es',
                 ]);
 
@@ -40,7 +42,7 @@ class GeocodingService
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_TIMEOUT => 8,
                 CURLOPT_CONNECTTIMEOUT => 5,
-                CURLOPT_USERAGENT => 'Jobshour/1.0 (https://jobshour.dondemorales.cl)',
+                CURLOPT_USERAGENT => 'Jobshours/1.0 (https://jobshours.com; contacto@jobshour.cl)',
                 CURLOPT_HTTPHEADER => ['Accept: application/json'],
                 CURLOPT_FOLLOWLOCATION => true,
             ]);
@@ -53,35 +55,70 @@ class GeocodingService
                 $address = $data['address'] ?? [];
 
                 $result = [
-                    'city' => $address['city']
-                        ?? $address['town']
-                        ?? $address['village']
-                        ?? $address['municipality']
-                        ?? null,
+                    'city' => self::pickLocalityName($address, $data),
                     'region' => $address['state'] ?? $address['region'] ?? null,
                     'country' => $address['country'] ?? null,
                 ];
 
-                // Write file cache
                 $dir = dirname($cacheFile);
-                if (!is_dir($dir)) {
+                if (! is_dir($dir)) {
                     mkdir($dir, 0755, true);
                 }
                 file_put_contents($cacheFile, json_encode($result));
             }
         } catch (\Throwable $e) {
-            Log::warning('Geocoding failed', ['error' => $e->getMessage()]);
+            Log::warning('Geocoding failed', ['lat' => $lat, 'lng' => $lng, 'error' => $e->getMessage()]);
         }
 
         return $result;
     }
 
     /**
-     * Quick helper: returns just the city name or fallback.
+     * Nombre legible de la zona (comuna/ciudad) o fallback.
      */
     public static function getCityName(float $lat, float $lng, string $fallback = 'Tu zona'): string
     {
-        $result = self::reverseGeocode($lat, $lng);
-        return $result['city'] ?? $fallback;
+        $cacheKey = sprintf('geo_city_%s_%s', round($lat, 3), round($lng, 3));
+
+        return Cache::remember($cacheKey, now()->addDays(self::CACHE_DAYS), function () use ($lat, $lng, $fallback) {
+            $result = self::reverseGeocode($lat, $lng);
+
+            return $result['city'] ?: $fallback;
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $address
+     * @param  array<string, mixed>  $payload
+     */
+    private static function pickLocalityName(array $address, array $payload = []): ?string
+    {
+        $addresstype = $payload['addresstype'] ?? null;
+        $name = $payload['name'] ?? null;
+        if (is_string($name) && in_array($addresstype, ['hamlet', 'village', 'suburb', 'neighbourhood', 'locality'], true)) {
+            return $name;
+        }
+
+        // Preferir localidad más cercana al GPS antes que comuna (town).
+        foreach ([
+            'hamlet',
+            'suburb',
+            'village',
+            'locality',
+            'neighbourhood',
+            'city',
+            'town',
+            'municipality',
+        ] as $key) {
+            if (! empty($address[$key]) && is_string($address[$key])) {
+                return $address[$key];
+            }
+        }
+
+        if (is_string($name) && $name !== '') {
+            return $name;
+        }
+
+        return null;
     }
 }

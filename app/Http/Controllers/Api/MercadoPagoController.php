@@ -245,7 +245,7 @@ class MercadoPagoController extends Controller
             'transaction_amount' => $amount,
             'description'        => 'JobsHours - Servicio #' . $serviceRequest->id,
             'payment_method_id'  => 'visa', // se sobreescribe desde el brick
-            'capture'            => MercadoPagoServicePaymentHelper::shouldCaptureImmediately() ? true : false,
+            'capture'            => MercadoPagoServicePaymentHelper::shouldCaptureImmediately($serviceRequest),
             'external_reference' => (string) $serviceRequest->id,
             'notification_url'   => config('app.url') . '/api/v1/payments/mp/webhook',
             'metadata'           => [
@@ -339,7 +339,7 @@ class MercadoPagoController extends Controller
             'installments'       => $request->installments,
             'payment_method_id'  => $request->payment_method_id,
             'issuer_id'          => $issuerId,
-            'capture'            => MercadoPagoServicePaymentHelper::shouldCaptureImmediately() ? true : false,
+            'capture'            => MercadoPagoServicePaymentHelper::shouldCaptureImmediately($serviceRequest),
             'external_reference' => (string) $serviceRequest->id,
             'notification_url'   => config('app.url') . '/api/v1/payments/mp/webhook',
             'payer'              => $payer,
@@ -378,14 +378,21 @@ class MercadoPagoController extends Controller
             'payment_status'=> 'pending',
         ]);
 
-        app(MercadoPagoServicePaymentHelper::class)->syncServiceRequestFromMpPayment($serviceRequest->fresh(), $data);
+        $helper = app(MercadoPagoServicePaymentHelper::class);
+        $helper->syncServiceRequestFromMpPayment($serviceRequest->fresh(), $data);
+        $serviceRequest->refresh();
+
+        if ($data['status'] === 'authorized') {
+            $helper->captureAuthorizedPayment($serviceRequest);
+            $serviceRequest->refresh();
+        }
 
         return response()->json([
             'status'     => 'success',
             'payment_id' => $data['id'],
-            'mp_status'  => $data['status'],
+            'mp_status'  => $serviceRequest->mp_status,
             'amount'     => $amount,
-            'payment_status' => $serviceRequest->fresh()->payment_status,
+            'payment_status' => $serviceRequest->payment_status,
         ]);
     }
 
@@ -455,11 +462,10 @@ class MercadoPagoController extends Controller
 
         $helper = app(MercadoPagoServicePaymentHelper::class);
         $helper->syncServiceRequestFromMpPayment($serviceRequest, $data);
-        $serviceRequest->update(['status' => 'completed']);
 
         return response()->json([
             'status' => 'success',
-            'mp_status' => $data['status'],
+            'mp_status' => $serviceRequest->fresh()->mp_status,
             'payment_status' => $serviceRequest->fresh()->payment_status,
         ]);
     }

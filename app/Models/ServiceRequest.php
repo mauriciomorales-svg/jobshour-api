@@ -106,7 +106,7 @@ class ServiceRequest extends Model
             ->where(function($q) {
                 $q->whereNotNull('client_location')
                   ->orWhere(function($subQ) {
-                      // Fallback: si no hay client_location, usar coordenadas por defecto de Renaico
+                      // Sin client_location en PostGIS: demanda sin pin en mapa hasta que el cliente envíe GPS
                       $subQ->whereNull('client_location')
                            ->whereNull('worker_id');
                   });

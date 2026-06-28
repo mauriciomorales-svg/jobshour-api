@@ -94,20 +94,25 @@ class HealthController extends Controller
             $checks['horizon'] = 'unknown';
         }
 
-        // 8. Reverb — TCP check rápido
-        try {
-            $host = config('reverb.servers.reverb.host', '127.0.0.1');
-            $port = (int) config('reverb.servers.reverb.port', 8080);
-            $fp = @fsockopen($host, $port, $errno, $errstr, 1);
-            if ($fp) {
-                fclose($fp);
-                $checks['reverb'] = 'ok';
-            } else {
-                $checks['reverb'] = 'fail';
-                $status = 'degraded';
+        // 8. Reverb — solo si broadcast usa reverb (en prod suele ser Pusher Cloud)
+        $broadcastDriver = config('broadcasting.default', 'null');
+        if ($broadcastDriver === 'reverb') {
+            try {
+                $host = config('reverb.servers.reverb.host', '127.0.0.1');
+                $port = (int) config('reverb.servers.reverb.port', 8080);
+                $fp = @fsockopen($host, $port, $errno, $errstr, 1);
+                if ($fp) {
+                    fclose($fp);
+                    $checks['reverb'] = 'ok';
+                } else {
+                    $checks['reverb'] = 'fail';
+                    $status = 'degraded';
+                }
+            } catch (\Throwable $e) {
+                $checks['reverb'] = 'unknown';
             }
-        } catch (\Throwable $e) {
-            $checks['reverb'] = 'unknown';
+        } else {
+            $checks['reverb'] = 'n/a (pusher)';
         }
 
         $httpStatus = $status === 'ok' ? 200 : 503;

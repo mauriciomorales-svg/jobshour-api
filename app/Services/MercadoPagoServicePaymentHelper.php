@@ -26,11 +26,69 @@ class MercadoPagoServicePaymentHelper
             : (string) ($preference['init_point'] ?? '');
     }
 
-    /** En sandbox MP no admite retención (capture:false); en producción JobsHours retiene fondos. */
-    public static function shouldCaptureImmediately(): bool
+    /**
+     * Cobro inmediato: el pago del servicio ocurre tras marcar completed (no hay escrow previo en UI).
+     */
+    public static function shouldCaptureImmediately(?ServiceRequest $serviceRequest = null): bool
     {
-        return (bool) config('mercadopago.use_sandbox_checkout', false)
-            || config('app.env') !== 'production';
+        if ((bool) config('mercadopago.use_sandbox_checkout', false)) {
+            return true;
+        }
+
+        if (config('app.env') !== 'production') {
+            return true;
+        }
+
+        if ($serviceRequest && $serviceRequest->status === 'completed') {
+            return true;
+        }
+
+        return (bool) config('mercadopago.capture_immediately', true);
+    }
+
+    /**
+     * Captura un pago MP en estado authorized (producción legacy).
+     *
+     * @return array{success: bool, message: string, payment?: array<string, mixed>}
+     */
+    public function captureAuthorizedPayment(ServiceRequest $serviceRequest): array
+    {
+        $token = $this->accessToken();
+        if ($token === '') {
+            return ['success' => false, 'message' => 'Mercado Pago no está configurado'];
+        }
+
+        $mpId = $serviceRequest->mp_payment_id;
+        if (! $mpId) {
+            return ['success' => false, 'message' => 'Sin pago MP asociado'];
+        }
+
+        if ((string) $serviceRequest->mp_status !== 'authorized') {
+            return ['success' => true, 'message' => 'No requiere captura', 'payment' => null];
+        }
+
+        $response = Http::timeout(25)
+            ->withToken($token)
+            ->put("{$this->baseUrl}/v1/payments/{$mpId}", ['capture' => true]);
+
+        if (! $response->successful()) {
+            Log::error('[MP] captureAuthorizedPayment falló', [
+                'service_request_id' => $serviceRequest->id,
+                'http' => $response->status(),
+                'body' => $response->json(),
+            ]);
+
+            return ['success' => false, 'message' => 'No se pudo capturar el pago'];
+        }
+
+        $data = $response->json();
+        if (! is_array($data)) {
+            return ['success' => false, 'message' => 'Respuesta inválida de Mercado Pago'];
+        }
+
+        $this->syncServiceRequestFromMpPayment($serviceRequest, $data);
+
+        return ['success' => true, 'message' => 'Pago capturado', 'payment' => $data];
     }
 
     private function accessToken(): string
@@ -84,6 +142,10 @@ class MercadoPagoServicePaymentHelper
         }
 
         $serviceRequest->update($updates);
+
+        if ($status === 'authorized' && $serviceRequest->status === 'completed') {
+            $this->captureAuthorizedPayment($serviceRequest->fresh());
+        }
     }
 
     /**

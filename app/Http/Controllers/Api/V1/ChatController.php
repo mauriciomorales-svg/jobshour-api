@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Listeners\SendPushNotifications;
 use App\Models\Message;
 use App\Models\ServiceRequest;
+use App\Support\ServiceRequestChatAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -15,13 +16,7 @@ class ChatController extends Controller
 {
     private function canAccessRequestChat(ServiceRequest $serviceRequest, int $userId): bool
     {
-        $isClient = (int) $serviceRequest->client_id === $userId;
-        $isWorker = $serviceRequest->worker && (int) $serviceRequest->worker->user_id === $userId;
-
-        // Mantener compatibilidad: demandas pendientes permiten primer contacto.
-        $isPendingDemand = $serviceRequest->status === 'pending';
-
-        return $isClient || $isWorker || $isPendingDemand;
+        return ServiceRequestChatAccess::canAccess($serviceRequest, $userId);
     }
 
     public function threads(Request $request)
@@ -127,7 +122,7 @@ class ChatController extends Controller
                 ], 403);
             }
 
-            if (!in_array($serviceRequest->status, ['accepted', 'pending', 'in_progress'])) {
+            if (! ServiceRequestChatAccess::allowsSending($serviceRequest)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Chat no disponible para esta solicitud'

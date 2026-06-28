@@ -462,6 +462,11 @@ class ServiceRequestController extends Controller
                 ]);
             }
 
+            $fresh = $serviceRequest->fresh();
+            if ($fresh->mp_payment_id && $fresh->mp_status === 'authorized') {
+                app(\App\Services\MercadoPagoServicePaymentHelper::class)->captureAuthorizedPayment($fresh);
+            }
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Servicio completado exitosamente. El cliente puede calificar tu trabajo.',

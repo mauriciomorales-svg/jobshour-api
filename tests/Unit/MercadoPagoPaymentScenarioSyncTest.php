@@ -68,12 +68,20 @@ class MercadoPagoPaymentScenarioSyncTest extends TestCase
         $this->assertSame($mpStatus, $sr->mp_status);
     }
 
-    public function test_sandbox_uses_immediate_capture(): void
+    public function test_capture_policy_for_completed_services(): void
     {
-        config(['mercadopago.use_sandbox_checkout' => true, 'app.env' => 'production']);
+        config([
+            'mercadopago.use_sandbox_checkout' => false,
+            'app.env' => 'production',
+            'mercadopago.capture_immediately' => true,
+        ]);
         $this->assertTrue(MercadoPagoServicePaymentHelper::shouldCaptureImmediately());
 
-        config(['mercadopago.use_sandbox_checkout' => false, 'app.env' => 'production']);
-        $this->assertFalse(MercadoPagoServicePaymentHelper::shouldCaptureImmediately());
+        $completed = new ServiceRequest(['status' => 'completed']);
+        $this->assertTrue(MercadoPagoServicePaymentHelper::shouldCaptureImmediately($completed));
+
+        config(['mercadopago.capture_immediately' => false]);
+        $this->assertFalse(MercadoPagoServicePaymentHelper::shouldCaptureImmediately(new ServiceRequest(['status' => 'accepted'])));
+        $this->assertTrue(MercadoPagoServicePaymentHelper::shouldCaptureImmediately($completed));
     }
 }

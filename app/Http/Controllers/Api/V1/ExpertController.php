@@ -7,6 +7,7 @@ use App\Models\Worker;
 use App\Models\SearchLog;
 use App\Models\ProfileView;
 use App\Events\ProfileViewed;
+use App\Services\CityDetector;
 use App\Services\GeocodingService;
 use App\Support\Geofence;
 use Illuminate\Http\Request;
@@ -144,7 +145,7 @@ class ExpertController extends Controller
             'status' => 'success',
             'meta' => [
                 'center' => ['lat' => $lat, 'lng' => $lng],
-                'city' => \App\Services\CityDetector::detect((float) $lat, (float) $lng),
+                'city' => CityDetector::detect((float) $lat, (float) $lng),
                 'radius_searched' => "{$finalRadius}km",
                 'total_found' => $workerPoints->count() + $premiumPoints->count(),
                 'is_fallback' => $isFallback,
@@ -165,7 +166,10 @@ class ExpertController extends Controller
                 'data' => [],
                 'meta' => [
                     'center' => ['lat' => $request->input('lat', 0), 'lng' => $request->input('lng', 0)],
-                    'city' => \App\Services\CityDetector::detect((float) $request->input('lat', -37.67), (float) $request->input('lng', -72.58)),
+                    'city' => CityDetector::detect(
+                        (float) $request->input('lat', -37.67),
+                        (float) $request->input('lng', -72.58)
+                    ),
                     'radius_searched' => '0km',
                     'total_found' => 0,
                     'is_fallback' => false,

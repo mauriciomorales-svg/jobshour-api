@@ -27,11 +27,18 @@ class ReviewController extends Controller
             $user = $request->user();
             $serviceRequest = ServiceRequest::with('worker')->findOrFail($validated['service_request_id']);
 
-            // Validar que el servicio esté completado
+            // Validar que el servicio esté completado y pagado
             if ($serviceRequest->status !== 'completed') {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Solo puedes calificar servicios completados'
+                ], 422);
+            }
+
+            if ($serviceRequest->payment_status !== 'completed') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Debes completar el pago antes de calificar'
                 ], 422);
             }
 
